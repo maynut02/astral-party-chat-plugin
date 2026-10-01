@@ -38,6 +38,8 @@ jobs:
         run: ./scripts/test.ps1
       - name: Plugin installation regression checks
         run: ./tests/scripts/InstallTests.ps1
+      - name: Distributed CMD installer regression checks
+        run: ./tests/scripts/DistributionInstallerTests.ps1
       - name: Release version regression checks
         run: ./tests/scripts/ReleaseVersionTests.ps1
       - name: Local release orchestration regression checks

@@ -54,11 +54,12 @@ astral-party-chat-plugin/
 │  ├─ build.ps1
 │  ├─ test.ps1
 │  ├─ install.ps1
+│  ├─ distribution-installer.ps1
 │  ├─ release.ps1
 │  ├─ publish-release.ps1
 │  └─ package-release.ps1
 ├─ tests/             # 게임·운영 서버 없이 실행하는 회귀 검사
-├─ docs/install.txt   # 설치 ZIP에 포함되는 설치 안내
+├─ docs/install.txt   # 설치·제거·데이터 안내
 ├─ dist/              # 빌드 산출물, git 제외
 └─ .work/refs/        # 게임에서 복사한 빌드 참조 DLL, git 제외
 ```
@@ -113,10 +114,20 @@ dist\AstralParty.Chat.dll
 
 ## 설치
 
-게임이 종료된 상태에서:
+Release의 설치 ZIP을 내려받은 사용자는 전체 압축을 푼 뒤 `Install.cmd`를 더블클릭하면 됩니다. Windows에 포함된 PowerShell을 사용하므로 별도 SDK나 PowerShell 7 설치가 필요하지 않습니다. Steam 설치 경로와 라이브러리 목록·게임 manifest에서 게임을 찾으며 다른 드라이브에 설치한 경우도 검색합니다. 자동 검색에 실패하면 창에 게임 폴더 경로를 입력합니다. 게임 폴더는 `Astral Party` 또는 실행 파일이 있는 `8vJXnINT`를 선택할 수 있습니다.
+
+게임을 종료하고 BepInEx IL2CPP가 먼저 설치·초기화된 상태에서 실행하세요. 설치기는 기존의 중복 채팅 DLL을 `%LOCALAPPDATA%/AstralPartyChat/plugin-backups/`에 백업한 뒤 새 DLL을 설치합니다. 설치에 실패하면 이전 DLL을 복구합니다. 쓰기 권한이 없다면 표시된 경로의 권한을 확인한 후 `Install.cmd`를 관리자 권한으로 실행할 수 있습니다.
+
+소스에서 개발용 빌드를 설치하려면 게임이 종료된 상태에서:
 
 ```powershell
 .\scripts\install.ps1
+```
+
+개발용 설치도 Steam 게임 경로를 자동으로 찾습니다. 직접 경로를 지정할 수도 있습니다.
+
+```powershell
+.\scripts\install.ps1 -GameRoot 'D:\SteamLibrary\steamapps\common\Astral Party'
 ```
 
 또는 빌드와 동시에 설치:
@@ -125,7 +136,7 @@ dist\AstralParty.Chat.dll
 .\scripts\build.ps1 -Deploy
 ```
 
-기본 설치 위치:
+감지한 게임 아래의 설치 위치 예시:
 
 ```text
 C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT\BepInEx\plugins\AstralPartyChat\AstralParty.Chat.dll
@@ -210,7 +221,7 @@ Windows PowerShell에서 실행하면 설치된 PowerShell 7 또는 `.work`의 �
 
 공개 직후 응답이 끊겼다면 이미 게시된 태그의 커밋과 세 첨부파일의 해시를 확인해 완료 처리합니다. 미완료 배포 뒤 소스를 바꾸었거나 기록이 손상돼 새 배포를 시작해야 한다면 `release.ps1 -AbandonPending`으로 이전 기록을 보관한 뒤 다시 실행합니다. 기존 빌드 파일·GitHub 태그·Release는 삭제하지 않습니다.
 
-Release에는 플러그인 DLL·설치 ZIP·`SHA256SUMS.txt` 세 파일만 올립니다. 게임·Unity·IL2CPP 참조 DLL과 로컬 SDK, PDB, 내부 문서는 포함하지 않습니다. 로컬 배포 파일과 빌드 기록은 `.work/releases/`에 보관하며 Git에서 제외합니다.
+Release에는 플러그인 DLL·설치 ZIP·`SHA256SUMS.txt` 세 파일을 올립니다. 일반 사용자는 설치 ZIP 하나만 받으면 됩니다. 별도 DLL은 수동 교체용이고 `SHA256SUMS.txt`는 다운로드 파일의 무결성 확인용입니다. 설치 ZIP에는 플러그인 DLL과 자동 설치기 `Install.cmd`만 포함합니다. 설치기 내용도 게시 전에 검증합니다. 게임·Unity·IL2CPP 참조 DLL과 로컬 SDK, PDB, 내부 문서는 포함하지 않습니다. 로컬 배포 파일과 빌드 기록은 `.work/releases/`에 보관하며 Git에서 제외합니다.
 
 수동 로컬 패키징:
 

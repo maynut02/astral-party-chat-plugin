@@ -6,7 +6,8 @@ param(
     [Parameter(Mandatory = $true)][string]$AssetsRoot,
     [Parameter(Mandatory = $true)][string]$BuildInfoPath,
     [Parameter(Mandatory = $true)][string]$NotesPath,
-    [switch]$RecoverPublished
+    [switch]$RecoverPublished,
+    [string]$InstallerScriptPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,7 +51,7 @@ $zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $root $zipName))
 try {
     $members = @($zip.Entries.FullName)
     $dllMember = 'BepInEx/plugins/AstralPartyChat/AstralParty.Chat.dll'
-    if ($members.Count -ne 2 -or @($members | Select-Object -Unique).Count -ne 2 -or @($members | Where-Object { $_ -cnotin @($dllMember, 'INSTALL.txt') }).Count) {
+    if ($members.Count -ne 2 -or @($members | Select-Object -Unique).Count -ne 2 -or @($members | Where-Object { $_ -cnotin @($dllMember, 'Install.cmd') }).Count) {
         throw 'Unexpected install ZIP contents.'
     }
     $stream = $zip.GetEntry($dllMember).Open()
@@ -58,6 +59,18 @@ try {
     try { $zipDllHash = [Convert]::ToHexString($sha.ComputeHash($stream)).ToLowerInvariant() }
     finally { $sha.Dispose(); $stream.Dispose() }
     if ($zipDllHash -cne $hashes['AstralParty.Chat.dll']) { throw 'ZIP and standalone plugin differ.' }
+    if (-not $InstallerScriptPath) { $InstallerScriptPath = Join-Path $PSScriptRoot 'install.ps1' }
+    $InstallerScriptPath = [IO.Path]::GetFullPath($InstallerScriptPath)
+    . (Join-Path ([IO.Path]::GetDirectoryName($InstallerScriptPath)) 'distribution-installer.ps1')
+    $installer = $zip.GetEntry('Install.cmd')
+    if ($installer.Length -le 0 -or $installer.Length -gt 512KB) { throw 'Invalid install command size.' }
+    $stream = $installer.Open()
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $installerHash = [Convert]::ToHexString($sha.ComputeHash($stream))
+        $expectedInstallerHash = [Convert]::ToHexString($sha.ComputeHash([Text.UTF8Encoding]::new($false).GetBytes((Get-AstralDistributionInstaller -InstallerScriptPath $InstallerScriptPath))))
+    } finally { $sha.Dispose(); $stream.Dispose() }
+    if ($installerHash -cne $expectedInstallerHash) { throw 'Install command differs from the verified source.' }
 }
 finally { $zip.Dispose() }
 $dllPath = Join-Path $root 'AstralParty.Chat.dll'
@@ -230,9 +243,11 @@ $referenceRows = foreach ($file in $referencePaths) {
 $notes = @(
     "$title - Astral Party의 BepInEx IL2CPP 채팅 플러그인입니다.",
     '', '## 설치', '',
-    "1. $zipName 파일을 내려받아 압축을 풉니다.",
-    '2. BepInEx가 설치된 게임 폴더에 압축파일의 내용을 넣습니다.',
-    '3. 게임을 실행합니다. 기존 DLL만 교체하려면 AstralParty.Chat.dll을 BepInEx/plugins/AstralPartyChat/에 넣습니다.',
+    "1. 게임을 종료하고 $zipName 파일을 내려받아 전체 압축을 풉니다.",
+    '2. Install.cmd를 더블클릭합니다. Steam 게임 설치 위치를 찾아 플러그인을 설치합니다.',
+    '3. 자동 검색에 실패하면 창에 게임 폴더 경로를 입력합니다. BepInEx IL2CPP가 먼저 설치되고 초기화되어 있어야 합니다.',
+    '4. 설치가 완료되면 게임을 실행합니다. 이전 DLL은 %LOCALAPPDATA%/AstralPartyChat/plugin-backups/에 백업합니다.',
+    '수동 설치는 ZIP의 BepInEx 폴더를 게임의 8vJXnINT 폴더에 합치거나 별도 DLL을 BepInEx/plugins/AstralPartyChat/에 넣습니다. 기존 중복 DLL은 검색 경로 밖에 백업하고 새 DLL 한 개만 남깁니다.',
     '', '## 파일 확인', '',
     "- AstralParty.Chat.dll SHA-256: $($hashes['AstralParty.Chat.dll'])",
     "- $zipName SHA-256: $($hashes[$zipName])",

@@ -91,6 +91,22 @@ function Assert-ReleaseFile {
     }
 }
 
+function Assert-ReleaseInstallerSnapshot {
+    param([string]$SourceRoot, [string]$ExpectedCommit, [hashtable]$PreviewHashes)
+    foreach ($name in @('install.ps1', 'distribution-installer.ps1')) {
+        $path = Join-Path $SourceRoot "scripts/$name"
+        Assert-ReleaseFile $path
+        if ($PrepareOnly) {
+            $actualHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+            if ($actualHash -cne $PreviewHashes[$name]) { throw 'Installer source snapshot changed during release.' }
+        } else {
+            $expectedBlob = Invoke-ReleaseGit -Arguments @('rev-parse', "${ExpectedCommit}:scripts/$name")
+            $actualBlob = Invoke-ReleaseGit -Arguments @('hash-object', '--no-filters', $path)
+            if ($actualBlob -cne $expectedBlob) { throw 'Installer source snapshot differs from the committed source.' }
+        }
+    }
+}
+
 function Write-ReleaseJson {
     param([string]$Path, [object]$Value)
     if (Test-Path -LiteralPath $Path) { Assert-ReleaseFile $Path }
@@ -198,6 +214,8 @@ try {
     $assetsRoot = Join-Path $releaseRoot 'assets'
     $buildInfoPath = Join-Path $releaseRoot 'build-info.json'
     $notesPath = Join-Path $releaseRoot 'release-notes.md'
+    $sourceSnapshot = Join-Path $releaseRoot 'source'
+    $installerSourceHashes = @{}
 
     if ($pending) {
         Assert-ReleaseFile $buildInfoPath
@@ -208,10 +226,10 @@ try {
         & (Join-Path $PSScriptRoot 'check-public-files.ps1')
         & (Join-Path $PSScriptRoot 'test.ps1')
         & (Join-Path $repoRoot 'tests/scripts/InstallTests.ps1')
+        & (Join-Path $repoRoot 'tests/scripts/DistributionInstallerTests.ps1')
         & (Join-Path $repoRoot 'tests/scripts/ReleaseVersionTests.ps1')
         & (Join-Path $repoRoot 'tests/scripts/LocalReleaseTests.ps1')
 
-        $sourceSnapshot = Join-Path $releaseRoot 'source'
         New-ReleaseDirectory $sourceSnapshot
         if ($PrepareOnly) {
             $listing = @(Invoke-ReleaseGit -Arguments @('ls-files', '--cached', '--others', '--exclude-standard', '-z'))
@@ -229,6 +247,12 @@ try {
             $null = Invoke-ReleaseGit -Arguments @('archive', '--format=zip', '--output', $sourceArchive, $sourceCommit)
             Expand-Archive -LiteralPath $sourceArchive -DestinationPath $sourceSnapshot
         }
+        foreach ($name in @('install.ps1', 'distribution-installer.ps1')) {
+            $path = Join-Path $sourceSnapshot "scripts/$name"
+            Assert-ReleaseFile $path
+            $installerSourceHashes[$name] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+        }
+        Assert-ReleaseInstallerSnapshot -SourceRoot $sourceSnapshot -ExpectedCommit $sourceCommit -PreviewHashes $installerSourceHashes
 
         if (-not $RefsRoot) {
             $localRefs = Join-Path $workRoot 'refs'
@@ -269,8 +293,9 @@ try {
         $releaseDll = Join-Path $pluginRoot 'AstralParty.Chat.dll'
         & (Join-Path $repoRoot 'tests/scripts/ReferenceArchiveTests.ps1') -RefsRoot $snapshot
         & (Join-Path $repoRoot 'tests/scripts/ReleaseAssetsTests.ps1') -DllPath $releaseDll
+        Assert-ReleaseInstallerSnapshot -SourceRoot $sourceSnapshot -ExpectedCommit $sourceCommit -PreviewHashes $installerSourceHashes
         & (Join-Path $PSScriptRoot 'package-release.ps1') -Tag $release.Tag -OutputRoot $assetsRoot `
-            -DllPath $releaseDll -InstallNotesPath (Join-Path $sourceSnapshot 'docs/install.txt')
+            -DllPath $releaseDll -InstallerScriptPath (Join-Path $sourceSnapshot 'scripts/install.ps1')
         foreach ($reference in $references) {
             $path = Join-Path $snapshot $reference.file
             Assert-ReleaseFile $path
@@ -309,6 +334,7 @@ try {
     }
 
     Assert-ReleaseSource -ExpectedCommit $sourceCommit -DefaultBranch $remoteRepo.default_branch
+    Assert-ReleaseInstallerSnapshot -SourceRoot $sourceSnapshot -ExpectedCommit $sourceCommit -PreviewHashes $installerSourceHashes
     Assert-SavedRelease -Info $info -AssetsRoot $assetsRoot -ExpectedTag $release.Tag -ExpectedCommit $sourceCommit
     if (-not $pending) {
         Write-ReleaseJson -Path $pendingPath -Value ([ordered]@{
@@ -317,7 +343,8 @@ try {
     }
     try {
         & (Join-Path $PSScriptRoot 'publish-release.ps1') -Repository $repository -Tag $release.Tag -SourceCommit $sourceCommit `
-            -AssetsRoot $assetsRoot -BuildInfoPath $buildInfoPath -NotesPath $notesPath -RecoverPublished:([bool]$pending)
+            -AssetsRoot $assetsRoot -BuildInfoPath $buildInfoPath -NotesPath $notesPath -RecoverPublished:([bool]$pending) `
+            -InstallerScriptPath (Join-Path $sourceSnapshot 'scripts/install.ps1')
     } catch {
         Write-Warning "Release was not completed. Retry: .\scripts\release.ps1 -Tag $($release.Tag)"
         throw

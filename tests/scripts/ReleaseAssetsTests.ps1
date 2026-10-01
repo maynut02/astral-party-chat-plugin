@@ -359,13 +359,35 @@ function gh {
         param($assets)
         $zip = [IO.Compression.ZipFile]::Open((Join-Path $assets "AstralParty.Chat-$tag.zip"), [IO.Compression.ZipArchiveMode]::Update)
         try {
-            $zip.GetEntry('INSTALL.txt').Delete()
+            $zip.GetEntry('Install.cmd').Delete()
             $entry = $zip.CreateEntry('BepInEx/plugins/AstralPartyChat/AstralParty.Chat.dll')
             $writer = [IO.StreamWriter]::new($entry.Open())
             try { $writer.Write('duplicate') } finally { $writer.Dispose() }
         } finally { $zip.Dispose() }
         Update-Manifest $assets
     } -ShouldPass $false -ExpectedError 'Unexpected install ZIP contents'
+    Invoke-ReleaseCase 'zip-install-command-tampering-is-blocked' -Mutation {
+        param($assets)
+        $zip = [IO.Compression.ZipFile]::Open((Join-Path $assets "AstralParty.Chat-$tag.zip"), [IO.Compression.ZipArchiveMode]::Update)
+        try {
+            $zip.GetEntry('Install.cmd').Delete()
+            $entry = $zip.CreateEntry('Install.cmd')
+            $writer = [IO.StreamWriter]::new($entry.Open())
+            try { $writer.Write('@echo unexpected installer') } finally { $writer.Dispose() }
+        } finally { $zip.Dispose() }
+        Update-Manifest $assets
+    } -ShouldPass $false -ExpectedError 'Install command differs from the verified source'
+    Invoke-ReleaseCase 'zip-install-command-size-is-bounded' -Mutation {
+        param($assets)
+        $zip = [IO.Compression.ZipFile]::Open((Join-Path $assets "AstralParty.Chat-$tag.zip"), [IO.Compression.ZipArchiveMode]::Update)
+        try {
+            $zip.GetEntry('Install.cmd').Delete()
+            $entry = $zip.CreateEntry('Install.cmd')
+            $writer = [IO.StreamWriter]::new($entry.Open())
+            try { $writer.Write('a' * (512KB + 1)) } finally { $writer.Dispose() }
+        } finally { $zip.Dispose() }
+        Update-Manifest $assets
+    } -ShouldPass $false -ExpectedError 'Invalid install command size'
     Invoke-ReleaseCase 'zip-plugin-differs-from-standalone' -Mutation {
         param($assets)
         $zip = [IO.Compression.ZipFile]::Open((Join-Path $assets "AstralParty.Chat-$tag.zip"), [IO.Compression.ZipArchiveMode]::Update)

@@ -100,6 +100,8 @@ function global:Invoke-LocalReleaseStage([string]$Name, [object]$Data = $null) {
             'snapshot-reference' {
                 Copy-Item -LiteralPath (Join-Path $config.AssemblyPool '1.0.8/AstralParty.Chat.dll') -Destination (Join-Path $Data.refsRoot 'core/0Harmony.dll') -Force
             }
+            'snapshot-installer' { [IO.File]::AppendAllText((Join-Path $Data.sourceRoot 'scripts/install.ps1'), 'modified snapshot installer') }
+            'snapshot-generator' { [IO.File]::AppendAllText((Join-Path $Data.sourceRoot 'scripts/distribution-installer.ps1'), 'modified snapshot generator') }
         }
     }
 }
@@ -220,7 +222,7 @@ if (-not $OutputRoot) { $OutputRoot = Join-Path $root 'dist' }
 Copy-Item -LiteralPath (Join-Path $global:LocalReleaseTestConfig.AssemblyPool "$Version/AstralParty.Chat.dll") -Destination (Join-Path $OutputRoot 'AstralParty.Chat.dll') -Force
 '@
 $publishWrapper = @'
-param([string]$Repository, [string]$Tag, [string]$SourceCommit, [string]$AssetsRoot, [string]$BuildInfoPath, [string]$NotesPath, [switch]$RecoverPublished)
+param([string]$Repository, [string]$Tag, [string]$SourceCommit, [string]$AssetsRoot, [string]$BuildInfoPath, [string]$NotesPath, [switch]$RecoverPublished, [string]$InstallerScriptPath)
 Invoke-LocalReleaseStage 'publisher-start' @{ repository = $Repository; tag = $Tag; sourceCommit = $SourceCommit; assetsRoot = $AssetsRoot; buildInfoPath = $BuildInfoPath; notesPath = $NotesPath; recoverPublished = [bool]$RecoverPublished }
 & (Join-Path $PSScriptRoot 'publish-release.actual.ps1') @PSBoundParameters
 Write-LocalReleaseTrace 'publisher-complete' @{ tag = $Tag }
@@ -235,7 +237,7 @@ function New-ReleaseFixture([string]$Name, [switch]$NoCommit) {
     Copy-Item -LiteralPath (Join-Path $root 'scripts/publish-release.ps1') -Destination (Join-Path $root 'scripts/publish-release.actual.ps1')
     Write-TestFile (Join-Path $root 'scripts/publish-release.ps1') $publishWrapper
     Write-TestFile (Join-Path $root 'scripts/build.ps1') $buildStub
-    foreach ($relative in @('scripts/check-public-files.ps1', 'scripts/test.ps1', 'tests/scripts/InstallTests.ps1', 'tests/scripts/ReleaseVersionTests.ps1', 'tests/scripts/LocalReleaseTests.ps1', 'tests/scripts/ReferenceArchiveTests.ps1', 'tests/scripts/ReleaseAssetsTests.ps1')) {
+    foreach ($relative in @('scripts/check-public-files.ps1', 'scripts/test.ps1', 'tests/scripts/InstallTests.ps1', 'tests/scripts/DistributionInstallerTests.ps1', 'tests/scripts/ReleaseVersionTests.ps1', 'tests/scripts/LocalReleaseTests.ps1', 'tests/scripts/ReferenceArchiveTests.ps1', 'tests/scripts/ReleaseAssetsTests.ps1')) {
         $stage = [IO.Path]::GetFileName($relative)
         Write-TestFile (Join-Path $root $relative) "param([string]`$RefsRoot = '')`nInvoke-LocalReleaseStage '$stage' @{ refsRoot = `$RefsRoot; arguments = @(`$args) }`n"
     }
@@ -384,7 +386,7 @@ try {
         $f = New-ReleaseFixture 'clean-source'
         $r = Invoke-LocalRelease $f
         Assert-True ($r.Code -eq 0) $r.Output
-        $stages = @('check-public-files.ps1', 'test.ps1', 'InstallTests.ps1', 'ReleaseVersionTests.ps1', 'LocalReleaseTests.ps1', 'build.ps1', 'ReferenceArchiveTests.ps1', 'ReleaseAssetsTests.ps1', 'publisher-start', 'publisher-complete')
+        $stages = @('check-public-files.ps1', 'test.ps1', 'InstallTests.ps1', 'DistributionInstallerTests.ps1', 'ReleaseVersionTests.ps1', 'LocalReleaseTests.ps1', 'build.ps1', 'ReferenceArchiveTests.ps1', 'ReleaseAssetsTests.ps1', 'publisher-start', 'publisher-complete')
         $previous = -1
         foreach ($stage in $stages) {
             Assert-True ((Get-Trace $r $stage).Count -eq 1) "Expected exactly one $stage invocation."
@@ -543,7 +545,7 @@ try {
             Assert-NoPublishing $r
         }
     }
-    foreach ($stage in @('check-public-files.ps1', 'test.ps1', 'build.ps1', 'ReferenceArchiveTests.ps1', 'ReleaseAssetsTests.ps1')) {
+    foreach ($stage in @('check-public-files.ps1', 'test.ps1', 'DistributionInstallerTests.ps1', 'build.ps1', 'ReferenceArchiveTests.ps1', 'ReleaseAssetsTests.ps1')) {
         Invoke-LocalReleaseCase "failed-validation-$stage" {
             $f = New-ReleaseFixture ('failed-stage-' + $stage)
             $f.Config.FailureStage = $stage
@@ -584,6 +586,21 @@ try {
         Assert-True ((Get-Trace $r 'build.ps1').Count -eq 1) 'Reference mutation did not reach the build.'
         Assert-NoPublishing $r
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.Root '.work/releases/pending.json'))) 'A modified reference snapshot became a pending publication.'
+    }
+    foreach ($kind in @('snapshot-installer', 'snapshot-generator')) {
+        foreach ($preview in @($false, $true)) {
+            Invoke-LocalReleaseCase "changed-$kind-preview-$preview-blocks-publication" {
+                $f = New-ReleaseFixture ("cmd-source-$kind-$preview")
+                $f.Config.PrepareOnly = $preview
+                $f.Config.MutateAt = 'build.ps1'
+                $f.Config.Mutation = $kind
+                $r = Invoke-LocalRelease $f
+                Assert-Rejected $r 'Installer source snapshot'
+                Assert-True ((Get-Trace $r 'build.ps1').Count -eq 1) 'Installer source mutation did not reach the build.'
+                Assert-NoPublishing $r
+                Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.Root '.work/releases/pending.json'))) 'Modified installer source became a pending publication.'
+            }
+        }
     }
     Invoke-LocalReleaseCase 'concurrent-release-lock' {
         $f = New-ReleaseFixture 'concurrent-lock'

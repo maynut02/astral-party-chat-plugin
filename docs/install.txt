@@ -3,7 +3,12 @@ Astral Party Chat 설치
 1. Windows x64 Steam판 Astral Party를 종료합니다.
 2. BepInEx IL2CPP가 설치되고 한 번 이상 초기화된 게임 폴더를 준비합니다.
    검증된 빌드 참조 환경: BepInEx 6.0.0-be.788, Unity 2022.3.62f3.
-3. 설치 ZIP의 BepInEx 폴더를 게임 실행 파일 AstralParty_INT.exe가 있는
+3. 설치 ZIP의 전체 압축을 푼 뒤 Install.cmd를 더블클릭합니다.
+   Steam 라이브러리에서 게임 설치 위치를 찾으며 검색에 실패하면
+   게임 폴더 경로를 직접 입력합니다. Astral Party 또는 8vJXnINT 폴더를 선택합니다.
+   이전 DLL은 %LOCALAPPDATA%/AstralPartyChat/plugin-backups/에 백업하며
+   설치 실패 시 복구합니다. 설치기는 플러그인만 설치합니다.
+   수동 설치는 ZIP의 BepInEx 폴더를 게임 실행 파일 AstralParty_INT.exe가 있는
    8vJXnINT 폴더에 합칩니다.
    최종 경로: BepInEx/plugins/AstralPartyChat/AstralParty.Chat.dll
    DLL만 받았다면 해당 폴더를 직접 만들고 DLL을 넣습니다.
