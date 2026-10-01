@@ -244,7 +244,10 @@ try {
             }
         } else {
             $sourceArchive = Join-Path $releaseRoot 'source.zip'
-            $null = Invoke-ReleaseGit -Arguments @('archive', '--format=zip', '--output', $sourceArchive, $sourceCommit)
+            # Archive uses working-tree conversion. Keep committed LF bytes
+            # regardless of the developer's Windows line-ending preferences.
+            $null = Invoke-ReleaseGit -Arguments @('-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                'archive', '--format=zip', '--output', $sourceArchive, $sourceCommit)
             Expand-Archive -LiteralPath $sourceArchive -DestinationPath $sourceSnapshot
         }
         foreach ($name in @('install.ps1', 'distribution-installer.ps1')) {

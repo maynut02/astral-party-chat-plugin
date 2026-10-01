@@ -228,7 +228,9 @@ Invoke-LocalReleaseStage 'publisher-start' @{ repository = $Repository; tag = $T
 Write-LocalReleaseTrace 'publisher-complete' @{ tag = $Tag }
 '@
 
-function New-ReleaseFixture([string]$Name, [switch]$NoCommit) {
+function New-ReleaseFixture([string]$Name, [switch]$NoCommit,
+    [ValidateSet('true', 'input', 'false')][string]$AutoCrlf = 'true',
+    [ValidateSet('native', 'lf', 'crlf')][string]$CoreEol = 'native') {
     $root = Join-Path $testRoot $Name
     [IO.Directory]::CreateDirectory((Join-Path $root 'scripts')) | Out-Null
     foreach ($file in Get-ChildItem -LiteralPath (Join-Path $repoRoot 'scripts') -File) {
@@ -244,7 +246,7 @@ function New-ReleaseFixture([string]$Name, [switch]$NoCommit) {
     # No setup/install/sync fallback may access the real game, download a SDK,
     # or deploy anything. The normal test path supplies all references itself.
     foreach ($name in @('setup.ps1', 'install.ps1', 'sync-refs.ps1', 'import-refs.ps1')) {
-        Write-TestFile (Join-Path $root "scripts/$name") "throw 'Unexpected $name in an isolated local release test.'"
+        Write-TestFile (Join-Path $root "scripts/$name") "throw 'Unexpected $name in an isolated local release test.'`n"
     }
     Write-TestFile (Join-Path $root '.gitignore') ".work/`ndist/`nbin/`nobj/`n"
     Write-TestFile (Join-Path $root 'README.md') 'Local release fixture source.'
@@ -264,7 +266,8 @@ function New-ReleaseFixture([string]$Name, [switch]$NoCommit) {
     Invoke-FixtureGit $root @('config', 'user.name', 'Local release test') | Out-Null
     Invoke-FixtureGit $root @('config', 'user.email', 'local-release-test@example.invalid') | Out-Null
     Invoke-FixtureGit $root @('config', 'commit.gpgsign', 'false') | Out-Null
-    Invoke-FixtureGit $root @('config', 'core.autocrlf', 'false') | Out-Null
+    Invoke-FixtureGit $root @('config', 'core.autocrlf', $AutoCrlf) | Out-Null
+    Invoke-FixtureGit $root @('config', 'core.eol', $CoreEol) | Out-Null
     Invoke-FixtureGit $root @('config', 'core.hooksPath', (Join-Path $root '.work/empty-hooks')) | Out-Null
     Invoke-FixtureGit $root @('remote', 'add', 'origin', 'https://github.com/example/chat-plugin.git') | Out-Null
     $head = ''
@@ -363,6 +366,26 @@ try {
     }
     $wrapperPath = Join-Path $testRoot 'invoke-release.ps1'
     Write-TestFile $wrapperPath $childWrapper
+
+    foreach ($autoCrlf in @('true', 'input', 'false')) {
+        foreach ($eol in @('crlf', 'lf')) {
+            Invoke-LocalReleaseCase "committed-source-autocrlf-$autoCrlf-eol-$eol" {
+                $f = New-ReleaseFixture ("eol-$autoCrlf-$eol") -AutoCrlf $autoCrlf -CoreEol $eol
+                $r = Invoke-LocalRelease $f
+                Assert-True ($r.Code -eq 0) $r.Output
+                Assert-True ((Get-Trace $r 'publisher-complete').Count -eq 1) 'Git line-ending settings prevented publication.'
+                $snapshot = (Get-Trace $r 'build.ps1')[0].data.sourceRoot
+                foreach ($name in @('install.ps1', 'distribution-installer.ps1')) {
+                    $expected = Invoke-FixtureGit $f.Root @('rev-parse', "$($f.Head):scripts/$name")
+                    $actual = Invoke-FixtureGit $f.Root @('hash-object', '--no-filters', (Join-Path $snapshot "scripts/$name"))
+                    Assert-True ($actual -ceq $expected) "Source snapshot changed committed bytes: $name."
+                }
+                Assert-True ((Invoke-FixtureGit $f.Root @('config', 'core.autocrlf')) -ceq $autoCrlf) 'Release changed the developer Git autocrlf setting.'
+                Assert-True ((Invoke-FixtureGit $f.Root @('config', 'core.eol')) -ceq $eol) 'Release changed the developer Git eol setting.'
+                Assert-Manifest $f (Get-BuildInfo $f) '1.0.8' $true
+            }
+        }
+    }
 
     Invoke-LocalReleaseCase 'multiple-git-executables-on-path' {
         $f = New-ReleaseFixture 'multiple git paths'
