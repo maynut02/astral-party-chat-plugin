@@ -737,3 +737,7 @@ finally {
         Remove-Item -LiteralPath $resolved -Recurse -Force
     }
 }
+
+# Expected child failures are test results, not this suite's exit status. Set
+# success only after all assertions and cleanup finish; exceptions still fail.
+$global:LASTEXITCODE = 0
