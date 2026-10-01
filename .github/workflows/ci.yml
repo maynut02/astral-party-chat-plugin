@@ -40,4 +40,6 @@ jobs:
         run: ./tests/scripts/InstallTests.ps1
       - name: Release version regression checks
         run: ./tests/scripts/ReleaseVersionTests.ps1
+      - name: Local release orchestration regression checks
+        run: ./tests/scripts/LocalReleaseTests.ps1
 

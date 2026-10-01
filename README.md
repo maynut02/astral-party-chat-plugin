@@ -53,7 +53,10 @@ astral-party-chat-plugin/
 │  ├─ sync-refs.ps1
 │  ├─ build.ps1
 │  ├─ test.ps1
-│  └─ install.ps1
+│  ├─ install.ps1
+│  ├─ release.ps1
+│  ├─ publish-release.ps1
+│  └─ package-release.ps1
 ├─ tests/             # 게임·운영 서버 없이 실행하는 회귀 검사
 ├─ docs/install.txt   # 설치 ZIP에 포함되는 설치 안내
 ├─ dist/              # 빌드 산출물, git 제외
@@ -165,36 +168,51 @@ HTTP 408/409/429/5xx 및 일시적 연결·저장소 오류는 재시도합니�
 
 ## GitHub Actions와 Release
 
-- 브랜치 push·PR: 공개 파일 검사와 게임 참조 없이 실행하는 클라이언트/UI 회귀 검사
-- **Actions → Release → Run workflow**: 기본 브랜치에서 `patch / minor / major`를 선택하면 검사 → 빌드 → 태그 생성 → Release 게시
-- 첫 Release는 `v1.0.7`, 이후 최신 `vX.Y.Z` 태그를 기준으로 올립니다. 제목은 `ChatPlugin v1.0.7` 형식이며 설치 안내·체크섬·빌드 링크·변경 내역을 자동으로 작성합니다.
-- 직접 `vX.Y.Z` 태그를 push하는 배포도 지원합니다. DLL에는 태그 버전이 자동 반영됩니다.
+- GitHub Actions는 브랜치 push·PR 시 공개 파일 검사와 회귀 검사만 실행합니다.
+- Release는 게임 참조가 있는 로컬 개발환경에서 검사·빌드한 후 GitHub CLI로 업로드합니다.
+- 첫 Release는 `v1.0.7`, 이후 최신 `vX.Y.Z` 태그를 기준으로 `patch / minor / major`를 적용합니다. 제목은 `ChatPlugin v1.0.7` 형식입니다.
+- 설치 안내·체크섬·소스 커밋·SDK와 참조 DLL 버전·GitHub 변경 내역을 설명에 자동으로 작성합니다.
 
-GitHub-hosted Windows 러너를 사용합니다. 게임·Unity·IL2CPP 참조 DLL은 소스, Actions artifact, Release에 포함하지 않습니다. 최초 배포 전에 다음 설정을 준비합니다.
+PowerShell 7과 GitHub CLI가 필요합니다. 최초 준비 시:
 
-1. 게임에서 BepInEx를 한 번 초기화한 뒤 비공개 빌드 참조 ZIP을 만듭니다.
+```powershell
+.\scripts\setup.ps1
+gh auth login
+```
 
-   ```powershell
-   .\scripts\sync-refs.ps1
-   .\scripts\export-refs.ps1
-   ```
+Windows PowerShell에서 실행하면 설치된 PowerShell 7 또는 `.work`의 로컬 PowerShell 7로 전달합니다. `origin`에 업로드할 GitHub 저장소가 등록되어 있어야 합니다. GitHub Environment나 `ASTRAL_REFS_URL`·`ASTRAL_REFS_SHA256` 설정은 사용하지 않습니다. 참조 ZIP을 보관하거나 서버에 올릴 필요도 없습니다.
 
-   생성된 `.work/astral-build-refs.zip`은 컴파일 참조 DLL 12개를 포함하므로 공개 저장소·Release·Actions artifact에 올리지 않습니다. 기존 ZIP을 갱신하려면 `export-refs.ps1 -Force`를 사용합니다.
+변경사항을 GitHub 기본 브랜치에 커밋·push한 뒤 다음 중 하나를 실행합니다.
 
-2. ZIP을 접근 제한된 저장소에 보관하고 다운로드용 HTTPS 서명 URL을 발급합니다. URL은 리다이렉트 없이 ZIP을 직접 응답해야 합니다.
-3. **Settings → Environments → release-build**에 다음 값을 설정합니다.
+```powershell
+.\scripts\release.ps1 -Bump patch
+.\scripts\release.ps1 -Bump minor
+.\scripts\release.ps1 -Bump major
+```
 
-   | 종류 | 이름 | 값 |
-   | --- | --- | --- |
-   | Environment secret | `ASTRAL_REFS_URL` | ZIP의 HTTPS 다운로드 URL |
-   | Environment variable | `ASTRAL_REFS_SHA256` | ZIP 생성 시 표시된 SHA-256 |
+명령 하나가 공개 파일·회귀·설치·배포 검사, 실제 참조 DLL 빌드, 패키징, 태그 생성과 Release 게시까지 처리합니다. 소스와 참조 DLL을 배포별 폴더에 복사해 일반 개발 빌드와 산출물이 섞이지 않도록 합니다. DLL에는 선택한 버전이 반영됩니다. 작업 폴더에 미커밋 변경이 있거나 기본 브랜치의 커밋을 아직 push하지 않았다면 게시를 중단합니다. 게임 설치 DLL은 갱신하지 않습니다.
 
-   허용하는 배포 브랜치·태그에 기본 브랜치(예: `main`)와 태그 `v*`를 추가합니다. 저장소의 Actions·태그 ruleset은 게시 job의 `GITHUB_TOKEN`으로 태그 생성과 Release 게시를 허용해야 합니다. 별도 PAT는 사용하지 않습니다.
-4. 변경사항을 기본 브랜치에 커밋·push한 뒤 **Actions → Release → Run workflow**를 실행합니다. 참조 ZIP을 갱신하거나 URL이 만료되면 위 값도 갱신합니다.
+업로드 없이 검증·파일 생성만 하려면:
 
-이미 공개된 Release는 덮어쓰지 않습니다. 업로드 실패 시 **Re-run failed jobs**로 실패한 build/publish job을 재실행하여 같은 태그의 draft를 복구할 수 있습니다. 수동 배포의 **Re-run all jobs**는 버전이 다시 증가하지 않도록 차단합니다. checks job이 실패했다면 수정 후 새 수동 실행을 시작하세요. 기존 draft에 DLL·설치 ZIP·체크섬 외 첨부파일이 있으면 게시를 중단합니다.
+```powershell
+.\scripts\release.ps1 -Bump patch -PrepareOnly
+```
 
-로컬 패키징:
+이 모드는 미커밋 상태에서도 실행할 수 있으며 `.work/release-previews/`에 검증용 파일을 만듭니다. 해당 파일은 배포용 빌드와 구분되어 직접 게시할 수 없습니다.
+
+업로드가 실패하면 빌드와 버전을 보관하고 다음 실행에서 같은 태그로 재시도합니다. 태그를 지정할 수도 있습니다.
+
+```powershell
+.\scripts\release.ps1 -Tag v1.0.7
+```
+
+재시도는 저장한 파일의 체크섬과 원래 소스 커밋을 확인하며 버전을 올리거나 다시 빌드하지 않습니다. 이미 공개된 Release나 기존 태그를 덮어쓰지 않습니다. 기존 draft에 DLL·설치 ZIP·체크섬 외 첨부파일이 있으면 게시를 중단합니다.
+
+공개 직후 응답이 끊겼다면 이미 게시된 태그의 커밋과 세 첨부파일의 해시를 확인해 완료 처리합니다. 미완료 배포 뒤 소스를 바꾸었거나 기록이 손상돼 새 배포를 시작해야 한다면 `release.ps1 -AbandonPending`으로 이전 기록을 보관한 뒤 다시 실행합니다. 기존 빌드 파일·GitHub 태그·Release는 삭제하지 않습니다.
+
+Release에는 플러그인 DLL·설치 ZIP·`SHA256SUMS.txt` 세 파일만 올립니다. 게임·Unity·IL2CPP 참조 DLL과 로컬 SDK, PDB, 내부 문서는 포함하지 않습니다. 로컬 배포 파일과 빌드 기록은 `.work/releases/`에 보관하며 Git에서 제외합니다.
+
+수동 로컬 패키징:
 
 ```powershell
 .\scripts\build.ps1

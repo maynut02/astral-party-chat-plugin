@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$Tag,
-    [string]$OutputRoot = ''
+    [string]$OutputRoot = '',
+    [string]$DllPath = '',
+    [string]$InstallNotesPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -8,7 +10,8 @@ $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $resolved = & (Join-Path $PSScriptRoot 'release-version.ps1') -InitialVersion '0.0.0' -ExplicitTag $Tag
 $version = $resolved.Version
 
-$dll = Join-Path $repoRoot 'dist\AstralParty.Chat.dll'
+$dll = if ($DllPath) { [IO.Path]::GetFullPath($DllPath) } else { Join-Path $repoRoot 'dist\AstralParty.Chat.dll' }
+if (-not $InstallNotesPath) { $InstallNotesPath = Join-Path $repoRoot 'docs\install.txt' }
 if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { throw 'Run scripts/build.ps1 before packaging.' }
 if ([Reflection.AssemblyName]::GetAssemblyName($dll).Name -cne 'AstralParty.Chat') { throw 'Unexpected plugin assembly.' }
 if ([Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion -cne $version) {
@@ -40,7 +43,7 @@ try {
     finally { $source.Dispose(); $destination.Dispose() }
     $entry = $archive.CreateEntry('INSTALL.txt')
     $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
-    try { $writer.Write([IO.File]::ReadAllText((Join-Path $repoRoot 'docs\install.txt'))) }
+    try { $writer.Write([IO.File]::ReadAllText($InstallNotesPath)) }
     finally { $writer.Dispose() }
 }
 finally { $archive.Dispose(); $stream.Dispose() }
