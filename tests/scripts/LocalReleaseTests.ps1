@@ -10,11 +10,13 @@ foreach ($name in @('release.ps1', 'publish-release.ps1')) {
     }
 }
 $localPwsh = Join-Path $repoRoot '.work/pwsh-7.6.6/pwsh.exe'
-$pwsh = if (Test-Path -LiteralPath $localPwsh) { $localPwsh } else { (Get-Command pwsh -CommandType Application -ErrorAction Stop).Source }
+$pwsh = if (Test-Path -LiteralPath $localPwsh) { $localPwsh } else { Get-Command pwsh -CommandType Application -ErrorAction Stop | Select-Object -First 1 -ExpandProperty Source }
 $localDotnet = Join-Path $repoRoot '.work/dotnet/dotnet.exe'
-$dotnet = if (Test-Path -LiteralPath $localDotnet) { $localDotnet } else { (Get-Command dotnet -CommandType Application -ErrorAction Stop).Source }
-$nativeGit = (Get-Command git -CommandType Application -ErrorAction Stop).Source
-$testParent = [IO.Path]::GetFullPath((Join-Path $repoRoot '.work/local-release-tests'))
+$dotnet = if (Test-Path -LiteralPath $localDotnet) { $localDotnet } else { Get-Command dotnet -CommandType Application -ErrorAction Stop | Select-Object -First 1 -ExpandProperty Source }
+# Application lookup can return several copies on PATH, including on Actions.
+$nativeGit = Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1 -ExpandProperty Source
+# Nested release fixtures must stay short enough for Windows file-version reads.
+$testParent = [IO.Path]::GetFullPath((Join-Path $repoRoot '.work/tests'))
 $testRoot = Join-Path $testParent ([Guid]::NewGuid().ToString('N'))
 $oldPath = $env:PATH
 $oldTelemetry = $env:DOTNET_CLI_TELEMETRY_OPTOUT
@@ -61,7 +63,7 @@ $env:GITHUB_TOKEN = ''
 $env:GH_HOST = 'github.com'
 $global:LocalReleaseTestRoot = $FixtureRoot
 $global:LocalReleaseTestConfig = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
-$global:LocalReleaseTestGit = (Get-Command git -CommandType Application -ErrorAction Stop).Source
+$global:LocalReleaseTestGit = Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1 -ExpandProperty Source
 $global:LocalReleaseTestTracePath = Join-Path $FixtureRoot '.work/trace.jsonl'
 $global:LocalReleaseTestRemotePath = Join-Path $FixtureRoot '.work/remote.json'
 $global:LocalReleaseTestRemote = Get-Content -LiteralPath $global:LocalReleaseTestRemotePath -Raw | ConvertFrom-Json
@@ -359,6 +361,24 @@ try {
     }
     $wrapperPath = Join-Path $testRoot 'invoke-release.ps1'
     Write-TestFile $wrapperPath $childWrapper
+
+    Invoke-LocalReleaseCase 'multiple-git-executables-on-path' {
+        $f = New-ReleaseFixture 'multiple git paths'
+        $gitBins = @((Join-Path $f.Root '.work/first git'), (Join-Path $f.Root '.work/second git'))
+        foreach ($directory in $gitBins) {
+            Write-TestFile (Join-Path $directory 'git.cmd') "@echo off`r`n`"$nativeGit`" %*`r`nexit /b %errorlevel%`r`n"
+        }
+        $casePath = $env:PATH
+        try {
+            $env:PATH = ($gitBins -join [IO.Path]::PathSeparator) + [IO.Path]::PathSeparator + $casePath
+            $applications = @(Get-Command git -CommandType Application -ErrorAction Stop)
+            Assert-True ($applications.Count -ge 3 -and $applications[0].Source -ceq (Join-Path $gitBins[0] 'git.cmd')) 'Expected multiple Git executables in PATH precedence order.'
+            $r = Invoke-LocalRelease $f
+            Assert-True ($r.Code -eq 0) $r.Output
+            Assert-True ((Get-Trace $r 'publisher-complete').Count -eq 1) 'Multiple Git paths prevented the mocked release from completing.'
+            Assert-Manifest $f (Get-BuildInfo $f) '1.0.8' $true
+        } finally { $env:PATH = $casePath }
+    }
 
     Invoke-LocalReleaseCase 'clean-source-publishes-after-all-checks' {
         $f = New-ReleaseFixture 'clean-source'
