@@ -1,6 +1,6 @@
 # 개발 환경과 검증
 
-사용자 설치 방법은 [README](../README.md), 배포 절차는 [버전 관리와 수동 릴리즈](releases.md)를 참고하세요.
+사용자 설치 방법은 [README](../README.md), 배포 절차는 [로컬 빌드와 릴리즈](releases.md)를 참고하세요.
 
 ## 준비 사항
 
@@ -77,6 +77,8 @@ C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT
 
 최신 소스를 빌드해 `dist/AstralPartyChatPlugin.dll`을 갱신하고, `dist/release/v버전/`에 DLL·ZIP·체크섬을 생성합니다. `build.ps1`을 먼저 실행할 필요는 없습니다. 기존 DLL이 있어도 빌드를 다시 실행하며, 빌드가 실패하면 패키징을 중단합니다.
 
+별도 DLL은 로컬 산출물로 유지하고, `SHA256SUMS.txt`에는 ZIP 한 개의 SHA-256만 기록합니다. GitHub Release에는 ZIP과 `SHA256SUMS.txt`만 첨부합니다.
+
 `build.ps1`과 같은 `-GameRoot`, `-RefsRoot` 옵션을 사용할 수 있습니다.
 
 ```powershell
@@ -89,11 +91,20 @@ C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT
 .\scripts\package-release.ps1 -DllPath '.\dist\AstralPartyChatPlugin.dll'
 ```
 
-`-DllPath`는 `-GameRoot`, `-RefsRoot`와 함께 사용할 수 없습니다. 버전 검증과 수동 업로드 절차는 [릴리즈 문서](releases.md#3-로컬-빌드와-패키징)를 참고하세요.
+`-DllPath`는 `-GameRoot`, `-RefsRoot`와 함께 사용할 수 없습니다. 버전 검증과 패키징 옵션은 [릴리즈 문서](releases.md#3-로컬-빌드와-패키징)를 참고하세요.
+
+패키지를 생성한 뒤에는 `upload-release.ps1`로 업로드합니다. 이 명령은 빌드하지 않습니다. 실제 업로드 전에 GitHub CLI 설치·최초 로그인과 소스 커밋의 push를 마치고, 미커밋 변경이 없는 HEAD를 유지하세요.
+
+```powershell
+.\scripts\upload-release.ps1 -Preview
+.\scripts\upload-release.ps1
+```
+
+`-Preview`는 GitHub 호출 없이 로컬 계획만 확인하며, `-Draft`는 업로드 후 draft로 유지합니다. 기본값과 기존 파일 비교·재시도·수동 업로드 대안은 [GitHub Release 업로드 절차](releases.md#4-github-release에-업로드)에 있습니다.
 
 ## 검증
 
-전체 CI 검사를 로컬에서 실행하려면 PowerShell 7을 사용하세요. 릴리즈 준비·패키징 검사 스크립트는 PowerShell 7 이상을 요구합니다.
+전체 CI 검사를 로컬에서 실행하려면 PowerShell 7을 사용하세요. 릴리즈 준비·패키징·업로드 검사 스크립트는 PowerShell 7 이상을 요구합니다.
 
 ```powershell
 .\scripts\check-public-files.ps1
@@ -101,9 +112,12 @@ C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT
 .\tests\scripts\ProjectVersionTests.ps1
 .\tests\scripts\ReleasePreparationTests.ps1
 .\tests\scripts\PackageReleaseTests.ps1
+.\tests\scripts\ReleaseUploadTests.ps1
 ```
 
 위 명령은 CI의 `Checks`와 같은 검사입니다. `test.ps1`은 실제 클라이언트·UI·외부 응답 처리 코드를 가짜 HTTP/WebSocket과 Unity 객체로 검사하며, 운영 서버와 게임에는 접속하지 않습니다. 나머지 검사는 버전 형식과 증가, 커밋 기반 릴리즈 준비, 패키징의 자동 빌드 호출과 실패 처리, 기존 DLL 사용, ZIP 내용과 체크섬, 버전 불일치 거부와 재패키징을 확인합니다. 패키징 검사에서 빌드 호출은 게임 참조가 필요 없는 테스트용 스크립트로 대체합니다. 배포 전에 CI가 성공했는지 확인하고 로컬에서 실제 플러그인을 빌드하세요.
+
+`ReleaseUploadTests.ps1`은 GitHub에 실제 요청을 보내거나 릴리즈를 게시하지 않고 업로드 동작을 검사합니다. 로컬 계획, draft 생성 후 업로드·공개 순서, 동일 파일 건너뛰기, SHA-256 불일치 시 중단과 재시도를 확인합니다.
 
 자동 검사만으로 게임 UI와 네이티브 입력 호환성을 보장할 수는 없습니다. 실제 게임에서는 다음을 확인합니다.
 

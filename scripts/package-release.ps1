@@ -61,7 +61,7 @@ try {
 }
 finally { $archive.Dispose(); $stream.Dispose() }
 
-$checksums = foreach ($name in @('AstralPartyChatPlugin.dll', $zipName)) {
+$checksums = foreach ($name in @($zipName)) {
     $hash = (Get-FileHash -LiteralPath (Join-Path $OutputRoot $name) -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $name"
 }

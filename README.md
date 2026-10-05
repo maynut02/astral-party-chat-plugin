@@ -29,7 +29,7 @@ Astral Party/
             └─ AstralPartyChatPlugin.dll
 ```
 
-DLL 파일만 받은 경우에는 `BepInEx/plugins/AstralPartyChatPlugin` 폴더를 만들고 그 안에 넣으세요. `SHA256SUMS.txt`는 다운로드 파일의 무결성 확인용이며 설치할 필요가 없습니다.
+수동 설치하려면 ZIP에서 `AstralPartyChatPlugin.dll`을 꺼내 `BepInEx/plugins/AstralPartyChatPlugin` 폴더를 만들고 그 안에 넣으세요. Release에는 ZIP과 `SHA256SUMS.txt`만 첨부합니다. `SHA256SUMS.txt`는 ZIP의 무결성 확인용이며 설치할 필요가 없습니다.
 
 ## 사용 방법
 
@@ -41,7 +41,7 @@ DLL 파일만 받은 경우에는 `BepInEx/plugins/AstralPartyChatPlugin` 폴더
 
 ## 업데이트와 제거
 
-업데이트할 때는 게임을 종료한 뒤 새 버전의 DLL로 교체하세요. 이전 이름인 `AstralParty.Chat.dll`을 사용하고 있었다면 해당 파일을 제거하세요. `BepInEx/plugins`에는 최신 `AstralPartyChatPlugin.dll`을 한 개만 유지하세요.
+업데이트할 때는 게임을 종료한 뒤 새 버전의 ZIP을 내려받아 위의 설치 위치에 DLL을 교체하세요. 이전 이름인 `AstralParty.Chat.dll`을 사용하고 있었다면 해당 파일을 제거하세요. `BepInEx/plugins`에는 최신 `AstralPartyChatPlugin.dll`을 한 개만 유지하세요.
 
 플러그인을 제거하려면 게임을 종료하고 `BepInEx/plugins/AstralPartyChatPlugin` 폴더를 삭제하세요. 다른 플러그인이 사용하는 BepInEx 폴더 전체를 삭제할 필요는 없습니다.
 
@@ -69,8 +69,17 @@ DLL만 만들려면 `build.ps1`, 릴리즈용 DLL·ZIP·체크섬을 함께 만�
 .\scripts\package-release.ps1   # 소스 빌드 후 릴리즈 파일 생성
 ```
 
-`setup.ps1`은 빌드용 참조 DLL과 로컬 .NET SDK를 준비합니다. `package-release.ps1`은 최신 소스를 빌드한 뒤 패키징하므로 사전 빌드는 필요 없습니다. 빌드 결과는 `dist/AstralPartyChatPlugin.dll`, 패키지는 `dist/release/v버전/`에 생성됩니다. 버전은 `VERSION` 파일을 기준으로 하며, 새 릴리즈 버전 준비와 GitHub 업로드 절차는 별도입니다.
+`setup.ps1`은 빌드용 참조 DLL과 로컬 .NET SDK를 준비합니다. `package-release.ps1`은 최신 소스를 빌드한 뒤 패키징하므로 사전 빌드는 필요 없습니다. 빌드 결과는 `dist/AstralPartyChatPlugin.dll`, 패키지는 `dist/release/v버전/`에 생성됩니다. 버전은 `VERSION` 파일을 기준으로 하며, 새 릴리즈 버전은 빌드 전에 준비합니다.
+
+로컬 패키지를 GitHub Release에 업로드하려면 다음 명령을 실행합니다. 실제 업로드 전에는 GitHub CLI 설치와 최초 `gh auth login`을 마치고, 미커밋 변경이 없는 HEAD를 먼저 `origin`에 push하세요.
+
+```powershell
+.\scripts\upload-release.ps1 -Preview  # GitHub 호출 없이 로컬 계획 확인
+.\scripts\upload-release.ps1           # 기존 패키지 업로드 및 공개
+```
+
+업로드 명령은 빌드하지 않으며 ZIP과 `SHA256SUMS.txt`만 첨부합니다. 별도 DLL은 로컬 산출물로 유지하고, 체크섬에는 ZIP 한 개만 기록합니다. `-Draft`를 지정하면 draft로 유지합니다. 옵션과 재시도 절차는 [릴리즈 문서](docs/releases.md#4-github-release에-업로드)에 있습니다.
 
 - [개발 환경과 검증](docs/development.md)
-- [버전 관리와 수동 릴리즈](docs/releases.md)
+- [로컬 빌드와 릴리즈](docs/releases.md)
 - [코드 구조와 서버 연동](docs/architecture.md)

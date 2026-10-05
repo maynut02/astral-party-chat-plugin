@@ -1,6 +1,6 @@
-# 버전 관리와 수동 릴리즈
+# 로컬 빌드와 릴리즈
 
-여러 커밋을 모아 릴리즈 준비 시 버전을 한 번 결정하고, 로컬에서 빌드한 파일을 GitHub Release에 직접 업로드합니다. GitHub Actions는 `Checks`만 수행합니다.
+여러 커밋을 모아 릴리즈 준비 시 버전을 한 번 결정하고, 로컬에서 빌드·패키징한 파일을 `upload-release.ps1`로 GitHub Release에 업로드합니다. GitHub Actions는 `Checks`만 수행합니다.
 
 ## 버전의 기준
 
@@ -25,7 +25,7 @@
 
 ## 1. 버전 준비
 
-소스 변경을 먼저 커밋하고, GitHub에서 직접 만든 이전 릴리즈 태그를 가져옵니다.
+소스 변경을 먼저 커밋하고, GitHub의 이전 릴리즈 태그를 가져옵니다.
 
 ```powershell
 git fetch origin --tags
@@ -50,7 +50,7 @@ git fetch origin --tags
 
 ## 2. 검증과 버전 커밋
 
-[개발 문서의 검사와 실제 게임 확인](development.md#검증)을 수행합니다. `VERSION`이 변경되었다면 커밋하고 소스와 함께 push합니다. 첫 배포처럼 값이 그대로라면 버전만을 위한 커밋은 필요 없습니다.
+[개발 문서의 검사와 실제 게임 확인](development.md#검증)을 수행합니다. `VERSION`이 변경되었다면 커밋하고 소스와 함께 `origin`에 push합니다. 첫 배포처럼 값이 그대로라면 버전만을 위한 커밋은 필요 없지만, 업로드할 최종 HEAD 커밋은 먼저 push해야 합니다.
 
 ```powershell
 git add VERSION
@@ -66,7 +66,7 @@ git status --short
 git rev-parse HEAD
 ```
 
-미커밋 변경이 없는 상태에서 빌드하고, 위에 표시된 전체 커밋 SHA를 릴리즈의 소스 기준으로 사용합니다. 준비 명령도 `SourceCommit`을 출력합니다.
+미커밋 변경이 없는 상태에서 빌드하고, 위에 표시된 전체 커밋 SHA를 릴리즈의 소스 기준으로 사용합니다. 준비 명령도 `SourceCommit`을 출력합니다. 빌드부터 업로드까지 같은 HEAD를 유지하세요. 소스 커밋이 바뀌면 변경한 커밋을 push하고 패키지를 다시 생성합니다.
 
 ## 3. 로컬 빌드와 패키징
 
@@ -89,7 +89,7 @@ ZIP에는 다음 DLL 한 개만 들어갑니다.
 BepInEx/plugins/AstralPartyChatPlugin/AstralPartyChatPlugin.dll
 ```
 
-게임 참조 DLL, BepInEx 본체, SDK, PDB, 문서는 패키지에 넣지 않습니다. 별도 DLL은 수동 교체용이며 `SHA256SUMS.txt`는 ZIP과 DLL의 SHA-256을 기록합니다.
+게임 참조 DLL, BepInEx 본체, SDK, PDB, 문서는 패키지에 넣지 않습니다. 별도 DLL은 로컬에서 수동 교체할 때 사용하는 산출물로 유지합니다. `SHA256SUMS.txt`에는 ZIP 한 개의 SHA-256만 기록하며, GitHub Release에는 ZIP과 `SHA256SUMS.txt`만 첨부합니다.
 
 DLL만 필요할 때는 `build.ps1`을 실행합니다. 이미 만든 DLL을 그대로 패키징하려면 `-DllPath`를 지정합니다. 이 경우에는 빌드를 실행하지 않습니다.
 
@@ -99,17 +99,57 @@ DLL만 필요할 때는 `build.ps1`을 실행합니다. 이미 만든 DLL을 그
 
 `-Tag v0.0.1`로 태그를, `-OutputRoot`로 출력 폴더를 지정할 수 있습니다. 자동 빌드 모드에서는 태그가 `VERSION`과 같아야 하며, `-GameRoot`·`-RefsRoot`를 빌드에 전달할 수 있습니다. `-DllPath` 모드에서는 지정한 DLL의 제품 버전과 태그가 같아야 합니다. 태그를 생략하면 두 모드 모두 `VERSION`에서 읽은 값을 사용합니다. 이 옵션은 Git 태그를 만들지 않습니다.
 
-## 4. GitHub에 직접 게시
+## 4. GitHub Release에 업로드
 
-[새 Release 작성 화면](https://github.com/maynut02/astral-party-chat-plugin/releases/new)에서 다음 정보를 입력합니다.
+### 최초 한 번: GitHub CLI 설치와 로그인
 
-| 항목 | 첫 배포 예시 |
+[GitHub CLI](https://cli.github.com/)를 설치한 뒤 PowerShell에서 다음 명령으로 로그인합니다. 릴리즈를 게시할 저장소에 쓰기 권한이 있는 계정을 사용하세요. [공식 로그인 안내](https://cli.github.com/manual/gh_auth_login)
+
+```powershell
+gh auth login
+```
+
+### 로컬 계획 확인과 게시
+
+저장소 루트에서 실행합니다. `upload-release.ps1`은 빌드하지 않고 이미 생성한 패키지를 업로드합니다. 게시 대상 `owner/repo`는 Git의 `origin`에 설정된 GitHub URL에서 추출하며, 미커밋 변경이 없는 HEAD를 소스 기준으로 사용합니다. 실제 업로드 전에 해당 커밋을 `origin`에 push해야 합니다. 업로드 명령이 소스를 커밋하거나 push하지는 않습니다.
+
+```powershell
+.\scripts\upload-release.ps1 -Preview
+.\scripts\upload-release.ps1
+```
+
+`-Preview`는 저장소·태그·소스 커밋·첨부 파일·설명 등 로컬 계획만 출력합니다. GitHub 호출이나 게시를 하지 않으므로 원격 Release와 첨부 파일의 상태도 조회하지 않습니다.
+
+기본 태그와 제목은 `VERSION`에서 읽은 `vX.Y.Z`입니다. 첨부 파일은 `dist/release/<태그>/`의 `AstralPartyChatPlugin-<태그>.zip`과 `SHA256SUMS.txt` 두 개뿐입니다. 기본 설명 파일인 `.work/releases/<태그>/release-notes.md`가 있으면 그 내용을 사용하고, 없으면 GitHub의 `--generate-notes`로 설명을 생성합니다. 설명 파일이 있다면 게시 전에 검토하세요.
+
+새 Release는 draft로 생성하고 두 파일의 업로드가 모두 완료되면 공개합니다. `-Draft`를 지정하면 새 Release나 기존 draft를 공개하지 않습니다. 이미 공개된 Release에는 공개 상태를 유지하면서 파일만 추가합니다.
+
+```powershell
+.\scripts\upload-release.ps1 -Draft
+```
+
+| 옵션 | 기본값과 동작 |
 | --- | --- |
-| 태그 | `v0.0.1` |
-| 제목 | `v0.0.1` |
-| 설명 | `.work/releases/v0.0.1/release-notes.md`를 검토하고 붙여넣기 |
-| 첨부 파일 | `dist/release/v0.0.1/`의 ZIP·DLL·SHA256SUMS.txt |
+| `-Tag` | `VERSION`의 `vX.Y.Z`; 지정할 때도 `VERSION`과 같은 버전이어야 함 |
+| `-AssetRoot` | `dist/release/<태그>`; 업로드할 ZIP과 체크섬이 있는 폴더 |
+| `-NotesFile` | `.work/releases/<태그>/release-notes.md`; 릴리즈 설명 파일 |
+| `-Draft` | 새 Release와 기존 draft를 공개하지 않음 |
+| `-Preview` | GitHub 호출·게시 없이 로컬 계획만 출력 |
 
-태그 대상은 실제로 빌드한 소스 커밋으로 지정하세요. 태그를 만든 뒤 브랜치에 새 커밋이 추가되어도 이미 만든 태그의 대상을 바꾸지 않습니다. 일반 사용자는 ZIP만 내려받으면 됩니다. 설치 안내는 [README](../README.md#설치)에 있습니다.
+태그·파일 경로를 직접 지정하는 예시는 다음과 같습니다.
 
-버전 준비·빌드·패키징 명령은 커밋, Git 태그 생성, push, GitHub Release 게시를 수행하지 않습니다. 다음 릴리즈 준비 전에 `git fetch origin --tags`를 다시 실행하세요.
+```powershell
+.\scripts\upload-release.ps1 -Tag v0.0.1 -AssetRoot '.\dist\release\v0.0.1' -NotesFile '.\.work\releases\v0.0.1\release-notes.md' -Preview
+```
+
+### 기존 Release와 재시도
+
+Release가 이미 있으면 누락된 첨부 파일만 추가합니다. 같은 이름의 파일이 있으면 원격 파일과 로컬 파일의 SHA-256을 비교하여 동일할 때 건너뛰고, 다르면 덮어쓰지 않고 중단합니다. 파일을 수정해 교체하려면 새 버전을 준비하세요.
+
+업로드가 중간에 실패하면 같은 HEAD와 로컬 파일을 유지한 채 같은 명령을 다시 실행할 수 있습니다. 이미 올라간 동일 파일은 건너뛰고 나머지만 업로드하며, draft는 두 파일이 준비된 뒤 공개합니다. 계속 draft로 유지하려면 재시도에도 `-Draft`를 지정하세요. GitHub CLI의 옵션은 [Release 생성](https://cli.github.com/manual/gh_release_create)과 [첨부 파일 업로드](https://cli.github.com/manual/gh_release_upload) 공식 문서를 참고하세요.
+
+### 수동 업로드 대안
+
+[새 Release 작성 화면](https://github.com/maynut02/astral-party-chat-plugin/releases/new)에서도 게시할 수 있습니다. 태그와 제목은 `vX.Y.Z`, 태그 대상은 먼저 push한 빌드 소스 커밋으로 지정하고, 준비한 설명을 붙여넣거나 자동 생성합니다. ZIP과 `SHA256SUMS.txt`만 첨부하고 두 파일을 확인한 뒤 공개하세요. 이미 만든 태그의 대상을 바꾸지 않습니다. 일반 사용자는 ZIP을 내려받아 [README의 설치 안내](../README.md#설치)를 따르면 됩니다.
+
+버전 준비·빌드·패키징 명령은 커밋, Git 태그 생성, push, GitHub Release 게시를 수행하지 않습니다. GitHub Release의 생성·업로드·공개는 `upload-release.ps1`이 담당합니다. 다음 릴리즈 준비 전에 `git fetch origin --tags`를 다시 실행하세요.

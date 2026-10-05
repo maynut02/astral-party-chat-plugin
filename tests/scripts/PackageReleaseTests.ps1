@@ -39,10 +39,10 @@ try {
 if (@(Get-ChildItem -LiteralPath $assets).Count -ne 3) { throw 'Unexpected release assets.' }
 if ((Get-FileHash -LiteralPath $dll).Hash -cne (Get-FileHash -LiteralPath (Join-Path $assets 'AstralPartyChatPlugin.dll')).Hash) { throw 'Standalone DLL differs.' }
 $checksums = [IO.File]::ReadAllLines((Join-Path $assets 'SHA256SUMS.txt'))
-if ($checksums.Count -ne 2) { throw 'Release manifest must include the ZIP and standalone DLL.' }
+if ($checksums.Count -ne 1) { throw 'Release manifest must include only the uploaded ZIP.' }
 foreach ($line in $checksums) {
     $parts = $line -split '  ', 2
-    if ($parts[1] -cnotin @('AstralPartyChatPlugin.dll', $zipName)) { throw 'Unexpected release checksum entry.' }
+    if ($parts[1] -cne $zipName) { throw 'Unexpected release checksum entry.' }
     if ((Get-FileHash -LiteralPath (Join-Path $assets $parts[1])).Hash.ToLowerInvariant() -cne $parts[0]) { throw 'Release checksum mismatch.' }
 }
 # Repackaging replaces the previous ZIP rather than retaining obsolete entries.

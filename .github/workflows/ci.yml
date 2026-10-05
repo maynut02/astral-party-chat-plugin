@@ -42,4 +42,6 @@ jobs:
         run: ./tests/scripts/ReleasePreparationTests.ps1
       - name: Release package regression checks
         run: ./tests/scripts/PackageReleaseTests.ps1
+      - name: Release upload regression checks
+        run: ./tests/scripts/ReleaseUploadTests.ps1
 
