@@ -24,11 +24,6 @@ function Invoke-ReleaseGit {
     } finally { [Console]::OutputEncoding = $savedEncoding }
 }
 
-function Resolve-ReleaseNumber {
-    param([string]$Value)
-    return (& (Join-Path $PSScriptRoot 'release-version.ps1') -InitialVersion $Value -ExplicitTag "v$Value").Version
-}
-
 $top = Invoke-ReleaseGit @('rev-parse', '--show-toplevel')
 if ([IO.Path]::GetFullPath($top).TrimEnd('\', '/') -ine $RepositoryRoot.TrimEnd('\', '/')) {
     throw 'RepositoryRoot must be the Git repository root.'
@@ -49,7 +44,7 @@ $tags = Invoke-ReleaseGit @('tag', '--merged', $sourceCommit, '--list', 'v*')
 $eligible = @($tags -split "`n" | ForEach-Object {
     if ($_ -cmatch '\Av(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z') {
         try {
-            $number = Resolve-ReleaseNumber $_.Substring(1)
+            $number = ConvertTo-AstralVersion $_ -Tag
             [pscustomobject]@{ Tag = $_; Number = [Version]$number }
         } catch { } # Ignore unrelated or out-of-range tag names.
     }
@@ -95,7 +90,7 @@ $pending = $null -ne $previous -and [Version]$current -gt $previous
 $target = $current
 
 if ($Version) {
-    $target = Resolve-ReleaseNumber $Version
+    $target = ConvertTo-AstralVersion $Version
     if ([Version]$target -lt [Version]$current -or ($null -ne $previous -and [Version]$target -le $previous)) {
         throw 'An explicit version must not decrease VERSION and must be newer than the previous release.'
     }
@@ -105,7 +100,7 @@ elseif ($null -ne $previous) {
         if (-not $pending) { throw 'No release changes found. Use -Bump patch/minor/major for an intentional release.' }
     }
     else {
-        $recommended = (& (Join-Path $PSScriptRoot 'release-version.ps1') -InitialVersion $current -Tags @($previousTag) -Bump $selected).Version
+        $recommended = Get-AstralNextVersion -Version $previous.ToString() -Bump $selected
         if ($pending -and $Bump -eq 'auto') {
             if ([Version]$current -lt [Version]$recommended) {
                 throw "Prepared VERSION is too low for these commits. Re-run with -Bump $automatic or an explicit -Version."
@@ -118,10 +113,6 @@ elseif ($null -ne $previous) {
     }
 }
 # Without a previous release, the current VERSION is the bootstrap release.
-$numeric = [Version]$target
-if ($numeric.Major -gt 65534 -or $numeric.Minor -gt 65534 -or $numeric.Build -gt 65534) {
-    throw 'VERSION components must be between 0 and 65534 for .NET assembly metadata.'
-}
 $tag = "v$target"
 $existingTags = (Invoke-ReleaseGit @('tag', '--list', $tag))
 if ($existingTags) { throw 'The target release tag already exists. Prepare a newer version.' }
@@ -139,7 +130,7 @@ if ($commits.Count -eq 0) { $notes.Add('- 버전 및 배포 준비') }
 $notes.Add('')
 $notes.Add('## 설치')
 $notes.Add('')
-$notes.Add("``AstralParty.Chat-$tag.zip``을 내려받아 전체 압축을 푼 뒤, 게임을 종료하고 ``Install.cmd``를 실행하세요. BepInEx IL2CPP가 먼저 설치되어 있어야 합니다.")
+$notes.Add("게임을 종료하고 ``AstralParty.Chat-$tag.zip``의 ``BepInEx`` 폴더를 게임 실행 파일이 있는 폴더에 복사하세요. BepInEx IL2CPP가 먼저 설치되어 있어야 합니다. 기존 채팅 DLL은 새 DLL로 교체하고 중복 사본을 제거하세요.")
 $notesPath = Join-Path $RepositoryRoot ".work/releases/$tag/release-notes.md"
 if (-not $Preview) {
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($notesPath)) | Out-Null

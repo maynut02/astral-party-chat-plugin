@@ -69,7 +69,7 @@ internal static partial class ChatOverlay
         _chatLatestButtonText = CreateUiText(
             latest.transform, "LatestMessagesText", string.Empty, 18, Color.white,
             TextAnchor.MiddleCenter, Vector2.zero,
-            new Vector2(ChatLatestButtonWidth, ChatLatestButtonHeight), FontStyle.Normal);
+            new Vector2(ChatLatestButtonWidth, ChatLatestButtonHeight));
         _chatLatestButtonText.supportRichText = false;
         RefreshChatScrollControlPresentation();
     }

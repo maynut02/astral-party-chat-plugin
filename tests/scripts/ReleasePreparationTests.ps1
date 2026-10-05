@@ -63,7 +63,7 @@ Test-Case 'first-release-keeps-0.0.1-and-generates-korean-notes' {
     Assert-True ($result.Version -ceq '0.0.1' -and $result.Tag -ceq 'v0.0.1' -and $result.Title -ceq 'ChatPlugin v0.0.1') 'First release version changed.'
     Assert-True ($result.CommitCount -eq 3 -and -not $result.VersionChanged) 'First release did not aggregate history.'
     $notes = [IO.File]::ReadAllText($result.NotesPath)
-    Assert-True ($notes.Contains('채팅 기능 추가') -and $notes.Contains('입력 처리 수정') -and $notes.Contains('Install.cmd')) 'Korean release notes were corrupted.'
+    Assert-True ($notes.Contains('채팅 기능 추가') -and $notes.Contains('입력 처리 수정') -and $notes.Contains('BepInEx')) 'Korean release notes were corrupted.'
     Assert-True ((Invoke-TestGit $root @('tag', '--list')) -eq '') 'Preparation created a tag.'
     Assert-True ((Invoke-TestGit $root @('status', '--porcelain')) -eq '') 'Preparation changed source files.'
     $again = & $prepare -RepositoryRoot $root
@@ -184,7 +184,7 @@ Test-Case 'explicit-version-and-repeat-keep-same-value' {
     Assert-True ((& $prepare -RepositoryRoot $root).Version -ceq '0.5.0') 'Repeat overwrote explicit version.'
     Assert-Rejected $root 'must not decrease' @{ Version = '0.2.0' }
     Assert-Rejected $root 'would decrease' @{ Bump = 'patch' }
-    Assert-Rejected $root 'InitialVersion must be canonical' @{ Version = '0.05.0' }
+    Assert-Rejected $root 'canonical X.Y.Z' @{ Version = '0.05.0' }
     Assert-Rejected $root 'between 0 and 65534' @{ Version = '65535.0.0' }
 }
 Test-Case 'dirty-tracked-staged-and-untracked-source-are-blocked' {

@@ -1,22 +1,16 @@
 param(
     [string]$Tag = '',
     [string]$OutputRoot = '',
-    [string]$DllPath = '',
-    [string]$InstallerScriptPath = ''
+    [string]$DllPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $PSScriptRoot 'project-version.ps1')
 if (-not $Tag) { $Tag = 'v' + (Get-AstralProjectVersion -Root $repoRoot) }
-$resolved = & (Join-Path $PSScriptRoot 'release-version.ps1') -InitialVersion '0.0.0' -ExplicitTag $Tag
-$version = $resolved.Version
+$version = ConvertTo-AstralVersion $Tag -Tag
 
 $dll = if ($DllPath) { [IO.Path]::GetFullPath($DllPath) } else { Join-Path $repoRoot 'dist\AstralParty.Chat.dll' }
-if (-not $InstallerScriptPath) { $InstallerScriptPath = Join-Path $PSScriptRoot 'install.ps1' }
-$InstallerScriptPath = [IO.Path]::GetFullPath($InstallerScriptPath)
-. (Join-Path ([IO.Path]::GetDirectoryName($InstallerScriptPath)) 'distribution-installer.ps1')
-$installerText = Get-AstralDistributionInstaller -InstallerScriptPath $InstallerScriptPath
 if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { throw 'Run scripts/build.ps1 before packaging.' }
 if ([Reflection.AssemblyName]::GetAssemblyName($dll).Name -cne 'AstralParty.Chat') { throw 'Unexpected plugin assembly.' }
 if ([Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion -cne $version) {
@@ -46,10 +40,6 @@ try {
     $source = [IO.File]::OpenRead($dll)
     try { $source.CopyTo($destination) }
     finally { $source.Dispose(); $destination.Dispose() }
-    $entry = $archive.CreateEntry('Install.cmd')
-    $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
-    try { $writer.Write($installerText) }
-    finally { $writer.Dispose() }
 }
 finally { $archive.Dispose(); $stream.Dispose() }
 
@@ -58,4 +48,4 @@ $checksums = foreach ($name in @('AstralParty.Chat.dll', $zipName)) {
     "$hash  $name"
 }
 [IO.File]::WriteAllLines((Join-Path $OutputRoot 'SHA256SUMS.txt'), [string[]]$checksums, [Text.UTF8Encoding]::new($false))
-Write-Output "Release package ready: $Tag (plugin DLL, install ZIP, SHA256SUMS.txt)"
+Write-Output "Release package ready: $Tag (plugin DLL, ZIP, SHA256SUMS.txt)"

@@ -36,12 +36,10 @@ jobs:
         run: ./scripts/check-public-files.ps1
       - name: Client and overlay regression checks
         run: ./scripts/test.ps1
-      - name: Plugin installation regression checks
-        run: ./tests/scripts/InstallTests.ps1
-      - name: Distributed CMD installer regression checks
-        run: ./tests/scripts/DistributionInstallerTests.ps1
-      - name: Release version regression checks
-        run: ./tests/scripts/ReleaseVersionTests.ps1
+      - name: Project version regression checks
+        run: ./tests/scripts/ProjectVersionTests.ps1
       - name: Local release preparation regression checks
         run: ./tests/scripts/ReleasePreparationTests.ps1
+      - name: Release package regression checks
+        run: ./tests/scripts/PackageReleaseTests.ps1
 

@@ -581,8 +581,7 @@ namespace AstralParty.Chat
             Color color,
             TextAnchor alignment,
             Vector2 topLeft,
-            Vector2 size,
-            FontStyle fontStyle)
+            Vector2 size)
         {
             var gameObject = new GameObject(name, typeof(RectTransform));
             gameObject.transform.SetParent(parent, false);
@@ -591,7 +590,7 @@ namespace AstralParty.Chat
             text.fontSize = fontSize;
             text.color = color;
             text.alignment = alignment;
-            text.fontStyle = fontStyle;
+            text.fontStyle = FontStyle.Normal;
             SetTopLeftRect(text.rectTransform, topLeft, size);
             _chatTexts.Add(text);
             return text;

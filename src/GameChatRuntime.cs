@@ -2,18 +2,13 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
 using System.Reflection;
 using System.Text;
-using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using BepInEx.Logging;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
-using UnityEngine.EventSystems;
-using UnityEngine.UI;
 
 namespace AstralParty.Chat;
 
@@ -433,11 +428,6 @@ internal static partial class GameChatRuntime
             next.ChatButtonScreenPoint = placement.ScreenPoint;
             next.ChatButtonScreenSize = placement.ScreenSize;
 
-            var steamName = GetLocalSteamName();
-            next.Nickname = string.IsNullOrWhiteSpace(steamName)
-                ? "후보 없음"
-                : steamName;
-
             if (string.Equals(next.ScreenPhase, "방", StringComparison.Ordinal))
             {
                 var orderCandidates = new List<ScoredValue>();
@@ -469,13 +459,6 @@ internal static partial class GameChatRuntime
             }
 
             next.RoomId = Session.RoomId;
-            next.Order = next.ChatAvailable && !string.IsNullOrWhiteSpace(Session.Order)
-                ? Session.Order
-                : "후보 없음";
-            next.Character = next.ChatAvailable && !string.IsNullOrWhiteSpace(Session.Character)
-                ? Session.Character
-                : "후보 없음";
-
             lock (Sync)
                 _snapshot = next;
         }
@@ -967,14 +950,8 @@ internal static partial class GameChatRuntime
                 var typeCode = IL2CPP.il2cpp_type_get_type(fieldType);
                 if (typeCode != 14) continue;
 
-                if (TryReadNativeFieldValue(
-                        field,
-                        displayObject,
-                        fieldType,
-                        typeCode,
-                        out var value)
-                    && value is string stringValue
-                    && !string.IsNullOrWhiteSpace(stringValue))
+                var stringValue = ReadNativeStringField(field, displayObject);
+                if (!string.IsNullOrWhiteSpace(stringValue))
                 {
                     text = stringValue;
                     return true;
@@ -1611,112 +1588,16 @@ internal static partial class GameChatRuntime
 
     
 
-    private static bool TryReadNativeFieldValue(
-        IntPtr field,
-        IntPtr objectPointer,
-        IntPtr fieldType,
-        int typeCode,
-        out object? value)
+    private static string? ReadNativeStringField(IntPtr field, IntPtr objectPointer)
     {
-        value = null;
-
         try
         {
-            var boxed = IL2CPP.il2cpp_field_get_value_object(field, objectPointer);
-            if (boxed == IntPtr.Zero) return false;
-
-            if (typeCode == 14) // string
-            {
-                value = IL2CPP.Il2CppStringToManaged(boxed);
-                return value != null;
-            }
-
-            var data = IL2CPP.il2cpp_object_unbox(boxed);
-            if (data == IntPtr.Zero) return false;
-
-            switch (typeCode)
-            {
-                case 2: // bool
-                    value = Marshal.ReadByte(data) != 0;
-                    return true;
-                case 3: // char
-                    value = (char)(ushort)Marshal.ReadInt16(data);
-                    return true;
-                case 4: // i1
-                    value = unchecked((sbyte)Marshal.ReadByte(data));
-                    return true;
-                case 5: // u1
-                    value = Marshal.ReadByte(data);
-                    return true;
-                case 6: // i2
-                    value = Marshal.ReadInt16(data);
-                    return true;
-                case 7: // u2
-                    value = unchecked((ushort)Marshal.ReadInt16(data));
-                    return true;
-                case 8: // i4
-                    value = Marshal.ReadInt32(data);
-                    return true;
-                case 9: // u4
-                    value = unchecked((uint)Marshal.ReadInt32(data));
-                    return true;
-                case 10: // i8
-                    value = Marshal.ReadInt64(data);
-                    return true;
-                case 11: // u8
-                    value = unchecked((ulong)Marshal.ReadInt64(data));
-                    return true;
-                case 12: // r4
-                    value = BitConverter.Int32BitsToSingle(Marshal.ReadInt32(data));
-                    return true;
-                case 13: // r8
-                    value = BitConverter.Int64BitsToDouble(Marshal.ReadInt64(data));
-                    return true;
-                case 17: // valuetype / enum
-                {
-                    var enumClass = IL2CPP.il2cpp_class_from_il2cpp_type(fieldType);
-                    if (enumClass == IntPtr.Zero || !IL2CPP.il2cpp_class_is_enum(enumClass))
-                        return false;
-                    var baseType = IL2CPP.il2cpp_class_enum_basetype(enumClass);
-                    if (baseType == IntPtr.Zero) return false;
-                    var baseCode = IL2CPP.il2cpp_type_get_type(baseType);
-                    return TryReadUnboxedPrimitive(data, baseCode, out value);
-                }
-                default:
-                    return false;
-            }
+            var value = IL2CPP.il2cpp_field_get_value_object(field, objectPointer);
+            return value == IntPtr.Zero ? null : IL2CPP.Il2CppStringToManaged(value);
         }
         catch
         {
-            value = null;
-            return false;
-        }
-    }
-
-    private static bool TryReadUnboxedPrimitive(IntPtr data, int typeCode, out object? value)
-    {
-        value = null;
-        try
-        {
-            switch (typeCode)
-            {
-                case 2: value = Marshal.ReadByte(data) != 0; return true;
-                case 3: value = (char)(ushort)Marshal.ReadInt16(data); return true;
-                case 4: value = unchecked((sbyte)Marshal.ReadByte(data)); return true;
-                case 5: value = Marshal.ReadByte(data); return true;
-                case 6: value = Marshal.ReadInt16(data); return true;
-                case 7: value = unchecked((ushort)Marshal.ReadInt16(data)); return true;
-                case 8: value = Marshal.ReadInt32(data); return true;
-                case 9: value = unchecked((uint)Marshal.ReadInt32(data)); return true;
-                case 10: value = Marshal.ReadInt64(data); return true;
-                case 11: value = unchecked((ulong)Marshal.ReadInt64(data)); return true;
-                default: return false;
-            }
-        }
-        catch
-        {
-            value = null;
-            return false;
+            return null;
         }
     }
 
@@ -1903,9 +1784,6 @@ internal sealed class ChatSnapshot
     public string ScreenPhase { get; set; } = "기타";
     public bool ChatAvailable { get; set; }
     public string RoomId { get; set; } = string.Empty;
-    public string Nickname { get; set; } = "후보 없음";
-    public string Character { get; set; } = "후보 없음";
-    public string Order { get; set; } = "후보 없음";
     public bool ChatButtonVisible { get; set; }
     public Vector2 ChatButtonScreenPoint { get; set; }
     public float ChatButtonScreenSize { get; set; }

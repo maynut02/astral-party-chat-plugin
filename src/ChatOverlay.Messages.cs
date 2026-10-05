@@ -320,8 +320,7 @@ internal static partial class ChatOverlay
                     new Color32(175, 175, 175, 255),
                     TextAnchor.MiddleCenter,
                     Vector2.zero,
-                    new Vector2(GetChatMessageRowWidth(), 1f),
-                    FontStyle.Normal);
+                    new Vector2(GetChatMessageRowWidth(), 1f));
                 text.supportRichText = false;
                 text.horizontalOverflow = HorizontalWrapMode.Wrap;
                 text.verticalOverflow = VerticalWrapMode.Truncate;
@@ -335,8 +334,7 @@ internal static partial class ChatOverlay
                     null,
                     null,
                     string.Empty,
-                    message.Sender ?? string.Empty,
-                    message.CharacterId ?? string.Empty);
+                    message.Sender ?? string.Empty);
                 MeasureSystemRow(row, text);
                 return row;
             }
@@ -366,8 +364,7 @@ internal static partial class ChatOverlay
                 GetOrderTextColor(message.Order),
                 TextAnchor.MiddleLeft,
                 new Vector2(72f, 8f),
-                new Vector2(Math.Max(1f, GetChatMessageRowWidth() - 250f), 26f),
-                FontStyle.Normal);
+                new Vector2(Math.Max(1f, GetChatMessageRowWidth() - 250f), 26f));
             participant.supportRichText = false;
 
             var sender = CreateUiText(
@@ -378,8 +375,7 @@ internal static partial class ChatOverlay
                 new Color32(145, 145, 145, 255),
                 TextAnchor.MiddleRight,
                 new Vector2(Math.Max(72f, GetChatMessageRowWidth() - 170f), 8f),
-                new Vector2(170f, 26f),
-                FontStyle.Normal);
+                new Vector2(170f, 26f));
             sender.supportRichText = false;
 
             var body = CreateUiText(
@@ -390,8 +386,7 @@ internal static partial class ChatOverlay
                 new Color32(235, 235, 235, 255),
                 TextAnchor.UpperLeft,
                 new Vector2(72f, 40f),
-                new Vector2(Math.Max(1f, GetChatMessageRowWidth() - 72f), 1f),
-                FontStyle.Normal);
+                new Vector2(Math.Max(1f, GetChatMessageRowWidth() - 72f), 1f));
             body.supportRichText = false;
             body.horizontalOverflow = HorizontalWrapMode.Wrap;
             body.verticalOverflow = VerticalWrapMode.Truncate;
@@ -405,8 +400,7 @@ internal static partial class ChatOverlay
                 body,
                 portrait,
                 message.Sender ?? string.Empty,
-                message.CharacterId ?? string.Empty,
-                message.CharacterName ?? string.Empty);
+                message.CharacterId ?? string.Empty);
 
             if (!TryUseGamePortrait(rendered))
             {
@@ -759,8 +753,7 @@ internal static partial class ChatOverlay
             Text? body,
             RawImage? portrait,
             string sender,
-            string characterId,
-            string characterName)
+            string characterId)
         {
             Identity = identity;
             RenderKey = renderKey;
@@ -771,7 +764,6 @@ internal static partial class ChatOverlay
             Portrait = portrait;
             Sender = sender;
             CharacterId = characterId;
-            CharacterName = characterName;
         }
 
         public string Identity { get; }
@@ -783,7 +775,6 @@ internal static partial class ChatOverlay
         public RawImage? Portrait { get; }
         public string Sender { get; }
         public string CharacterId { get; }
-        public string CharacterName { get; }
         public float Height { get; set; }
         public bool IsGamePortrait { get; set; }
     }

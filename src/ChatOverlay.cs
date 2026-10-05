@@ -25,7 +25,6 @@ internal static partial class ChatOverlay
     private static ScrollRect? _chatScrollRect;
     private static RectTransform? _chatContentRect;
     private static readonly List<Text> _chatTexts = new();
-    private static Image? _chatButtonImage;
     private static Image? _chatFillImage;
     private static Image? _chatIcon;
     private static Sprite? _buttonBorderSprite;
@@ -105,7 +104,6 @@ internal static partial class ChatOverlay
         _chatInputField = null;
         _chatScrollRect = null;
         _chatContentRect = null;
-        _chatButtonImage = null;
         _chatFillImage = null;
         _chatIcon = null;
         _buttonBorderSprite = null;
@@ -150,12 +148,12 @@ internal static partial class ChatOverlay
             Color.white,
             Color.white);
 
-        _chatButtonImage = _chatButton.AddComponent<Image>();
-        _chatButtonImage.sprite = _buttonBorderSprite;
-        _chatButtonImage.type = Image.Type.Simple;
-        _chatButtonImage.preserveAspect = true;
-        _chatButtonImage.color = Color.white;
-        _chatButtonImage.raycastTarget = true;
+        var buttonImage = _chatButton.AddComponent<Image>();
+        buttonImage.sprite = _buttonBorderSprite;
+        buttonImage.type = Image.Type.Simple;
+        buttonImage.preserveAspect = true;
+        buttonImage.color = Color.white;
+        buttonImage.raycastTarget = true;
 
         _chatButtonRect = _chatButton.GetComponent<RectTransform>();
         _chatButtonRect.anchorMin = new Vector2(0.5f, 0.5f);
@@ -183,7 +181,7 @@ internal static partial class ChatOverlay
         var iconObject = new GameObject("ChatIcon");
         iconObject.transform.SetParent(_chatButton.transform, false);
 
-        _chatIconSprite ??= CreateChatIconSprite(64);
+        _chatIconSprite ??= CreateChatIconSprite();
 
         _chatIcon = iconObject.AddComponent<Image>();
         _chatIcon.sprite = _chatIconSprite;
@@ -275,7 +273,7 @@ internal static partial class ChatOverlay
         var headerIcon = new GameObject("HeaderIcon");
         headerIcon.transform.SetParent(header.transform, false);
         var headerIconImage = headerIcon.AddComponent<Image>();
-        headerIconImage.sprite = _chatIconSprite ??= CreateChatIconSprite(64);
+        headerIconImage.sprite = _chatIconSprite ??= CreateChatIconSprite();
         headerIconImage.type = Image.Type.Simple;
         headerIconImage.preserveAspect = true;
         headerIconImage.color = Color.white;
@@ -293,8 +291,7 @@ internal static partial class ChatOverlay
             Color.white,
             TextAnchor.MiddleLeft,
             new Vector2(64f, 6f),
-            new Vector2(330f, 44f),
-            FontStyle.Normal);
+            new Vector2(330f, 44f));
         _chatTitleText.horizontalOverflow = HorizontalWrapMode.Overflow;
         _chatTitleText.verticalOverflow = VerticalWrapMode.Overflow;
 
@@ -306,8 +303,7 @@ internal static partial class ChatOverlay
             new Color32(175, 175, 175, 255),
             TextAnchor.MiddleLeft,
             new Vector2(64f, 46f),
-            new Vector2(390f, 26f),
-            FontStyle.Normal);
+            new Vector2(390f, 26f));
 
         var closeObject = new GameObject("Close");
         closeObject.transform.SetParent(_chatWindow.transform, false);
@@ -390,8 +386,7 @@ internal static partial class ChatOverlay
             new Color32(235, 235, 235, 255),
             TextAnchor.MiddleLeft,
             new Vector2(16f, 0f),
-            new Vector2(378f, 60f),
-            FontStyle.Normal);
+            new Vector2(378f, 60f));
         inputText.horizontalOverflow = HorizontalWrapMode.Wrap;
         inputText.verticalOverflow = VerticalWrapMode.Truncate;
 
@@ -403,8 +398,7 @@ internal static partial class ChatOverlay
             new Color32(125, 125, 125, 255),
             TextAnchor.MiddleLeft,
             new Vector2(16f, 0f),
-            new Vector2(378f, 60f),
-            FontStyle.Normal);
+            new Vector2(378f, 60f));
 
         _chatInputField = inputBackground.AddComponent<InputField>();
         _chatInputField.targetGraphic = inputBackground.GetComponent<Image>();
@@ -438,8 +432,7 @@ internal static partial class ChatOverlay
             Color.white,
             TextAnchor.MiddleCenter,
             Vector2.zero,
-            new Vector2(98f, 60f),
-            FontStyle.Normal);
+            new Vector2(98f, 60f));
 
         RenderChatMessages(force: true);
         _chatWindow.SetActive(false);
@@ -503,8 +496,7 @@ internal static partial class ChatOverlay
         Color color,
         TextAnchor alignment,
         Vector2 topLeft,
-        Vector2 size,
-        FontStyle style)
+        Vector2 size)
     {
         var gameObject = new GameObject(name);
         gameObject.transform.SetParent(parent, false);
@@ -654,7 +646,7 @@ internal static partial class ChatOverlay
             100f);
     }
 
-    private static Sprite CreateChatIconSprite(int size)
+    private static Sprite CreateChatIconSprite()
     {
         var texture = TrackOwnedUnityResource(
             new Texture2D(2, 2, TextureFormat.RGBA32, false));

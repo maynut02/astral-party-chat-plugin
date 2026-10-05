@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace AstralParty.Chat;
 

@@ -1,5 +1,5 @@
 function Get-AstralReferencePaths {
-    # Archive names are case-sensitive and always use forward slashes.
+    # Relative paths of the local BepInEx/Unity build dependencies.
     @(
         'core/0Harmony.dll'
         'core/BepInEx.Core.dll'
