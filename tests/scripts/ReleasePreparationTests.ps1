@@ -234,7 +234,7 @@ Test-Case 'windows-powershell-5.1-preserves-korean-release-notes' {
     $output = @(& $windowsPowerShell -NoProfile -File $prepare -RepositoryRoot $root 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell preparation failed: $($output -join "`n")" }
     $notes = [IO.File]::ReadAllText((Join-Path $root '.work/releases/v0.0.1/release-notes.md'))
-    Assert-True ($notes.Contains('첫 릴리즈입니다.') -and $notes.Contains('한글 메시지 입력')) 'Windows PowerShell corrupted UTF-8 text.'
+    Assert-True ($notes.Contains('## 변경 사항') -and $notes.Contains('한글 메시지 입력')) 'Windows PowerShell corrupted UTF-8 text.'
 }
 
 Test-Case 'real-project-generates-plugin-and-dll-versions-and-rejects-overrides' {

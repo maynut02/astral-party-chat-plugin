@@ -120,7 +120,6 @@ if ($existingTags) { throw 'The target release tag already exists. Prepare a new
 $notes = [Collections.Generic.List[string]]::new()
 $notes.Add("# $tag")
 $notes.Add('')
-if (-not $previousTag) { $notes.Add('첫 릴리즈입니다.'); $notes.Add('') }
 $notes.Add('## 변경 사항')
 $notes.Add('')
 foreach ($commit in $commits) {
