@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>AstralParty.Chat</AssemblyName>
+    <RootNamespace>AstralParty.Chat</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Optimize>true</Optimize>
+    <DebugType>portable</DebugType>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <DefineConstants Condition="'$(AstralBuildVersionSource)' != ''">$(DefineConstants);ASTRAL_BUILD_VERSION</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(AstralBuildVersionSource)' != ''">
+    <Compile Include="$(AstralBuildVersionSource)" Link="AstralBuildVersion.g.cs" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <RepositoryRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..'))</RepositoryRoot>
+    <LocalRefsRoot>$([System.IO.Path]::Combine('$(RepositoryRoot)', '.work', 'refs'))</LocalRefsRoot>
+    <AstralGameRoot Condition="'$(AstralGameRoot)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT</AstralGameRoot>
+    <AstralBepInExRoot Condition="'$(AstralRefsRoot)' != ''">$(AstralRefsRoot)</AstralBepInExRoot>
+    <AstralBepInExRoot Condition="'$(AstralBepInExRoot)' == '' and Exists('$(LocalRefsRoot)\core\BepInEx.Core.dll')">$(LocalRefsRoot)</AstralBepInExRoot>
+    <AstralBepInExRoot Condition="'$(AstralBepInExRoot)' == ''">$(AstralGameRoot)\BepInEx</AstralBepInExRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>$(AstralBepInExRoot)\core\Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>$(AstralBepInExRoot)\interop\Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx.Core">
+      <HintPath>$(AstralBepInExRoot)\core\BepInEx.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP">
+      <HintPath>$(AstralBepInExRoot)\core\BepInEx.Unity.IL2CPP.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(AstralBepInExRoot)\core\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(AstralBepInExRoot)\interop\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(AstralBepInExRoot)\interop\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(AstralBepInExRoot)\interop\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(AstralBepInExRoot)\interop\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(AstralBepInExRoot)\interop\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(AstralBepInExRoot)\interop\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(AstralBepInExRoot)\interop\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

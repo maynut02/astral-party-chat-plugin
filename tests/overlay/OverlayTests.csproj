@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);OVERLAY_HARNESS</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="OverlayTests.cs" />
+    <Compile Include="OverlayShim.cs" />
+    <Compile Include="ScrollControlsTests.cs" />
+    <Compile Include="KeyboardInputTests.cs" />
+    <Compile Include="../../src/ChatOverlay.Input.cs" Link="ChatOverlay.Input.cs" />
+    <Compile Include="../../src/AstralPartyChatPlugin.Input.cs" Link="AstralPartyChatPlugin.Input.cs" />
+    <Compile Include="../../src/ChatInputSubmitState.cs" Link="ChatInputSubmitState.cs" />
+    <Compile Include="../../src/ChatOverlay.Messages.cs" Link="ChatOverlay.Messages.cs" />
+    <Compile Include="../../src/ChatOverlay.Scroll.cs" Link="ChatOverlay.Scroll.cs" />
+    <Compile Include="../../src/ChatModels.cs" Link="ChatModels.cs" />
+    <Compile Include="../../src/PartyProtocol.cs" Link="PartyProtocol.cs" />
+  </ItemGroup>
+</Project>
