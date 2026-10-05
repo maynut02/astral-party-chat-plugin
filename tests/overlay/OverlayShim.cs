@@ -2,7 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using AstralParty.Chat;
+using AstralPartyChatPlugin;
 
 namespace UnityEngine
 {
@@ -468,7 +468,7 @@ namespace UnityEngine.UI
     }
 }
 
-namespace AstralParty.Chat
+namespace AstralPartyChatPlugin
 {
     using UnityEngine;
     using UnityEngine.UI;

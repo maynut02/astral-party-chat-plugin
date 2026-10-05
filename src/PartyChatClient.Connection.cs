@@ -8,7 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 internal sealed partial class PartyChatClient
 {

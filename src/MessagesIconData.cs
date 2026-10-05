@@ -1,4 +1,4 @@
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 internal static class MessagesIconData
 {

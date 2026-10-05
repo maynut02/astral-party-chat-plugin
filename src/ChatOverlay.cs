@@ -4,7 +4,7 @@ using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 internal static partial class ChatOverlay
 {
@@ -33,6 +33,7 @@ internal static partial class ChatOverlay
     private static Sprite? _chatWindowBackgroundSprite;
     private static bool _chatHovered;
     private static string _chatStatus = "연결 대기 중";
+    // Persisted keys keep the window position saved by existing installations.
     private const string ChatWindowXPref = "AstralPartyChat.WindowX.v3";
     private const string ChatWindowYPref = "AstralPartyChat.WindowY.v3";
     private const string LegacyChatWindowXPref = "AstralPartyChat.WindowX";
@@ -47,7 +48,7 @@ internal static partial class ChatOverlay
 
         EnsureAssetsRunning();
 
-        _root = new GameObject("AstralPartyChatOverlay");
+        _root = new GameObject("AstralPartyChatPluginOverlay");
         UnityEngine.Object.DontDestroyOnLoad(_root);
 
         var canvas = _root.AddComponent<Canvas>();
@@ -543,7 +544,7 @@ internal static partial class ChatOverlay
     {
         var texture = TrackOwnedUnityResource(
             new Texture2D(width, height, TextureFormat.RGBA32, false));
-        texture.name = "AstralPartyChatRoundedRect";
+        texture.name = "AstralPartyChatPluginRoundedRect";
         texture.wrapMode = TextureWrapMode.Clamp;
         texture.filterMode = FilterMode.Bilinear;
 
@@ -607,7 +608,7 @@ internal static partial class ChatOverlay
     {
         var texture = TrackOwnedUnityResource(
             new Texture2D(size, size, TextureFormat.RGBA32, false));
-        texture.name = "AstralPartyChatRoundedButton";
+        texture.name = "AstralPartyChatPluginRoundedButton";
         texture.wrapMode = TextureWrapMode.Clamp;
         texture.filterMode = FilterMode.Bilinear;
 
@@ -650,7 +651,7 @@ internal static partial class ChatOverlay
     {
         var texture = TrackOwnedUnityResource(
             new Texture2D(2, 2, TextureFormat.RGBA32, false));
-        texture.name = "AstralPartyChatMessagesIcon";
+        texture.name = "AstralPartyChatPluginMessagesIcon";
         texture.wrapMode = TextureWrapMode.Clamp;
         texture.filterMode = FilterMode.Bilinear;
 

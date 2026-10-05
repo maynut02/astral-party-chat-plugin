@@ -6,7 +6,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 public sealed partial class AstralPartyChatPlugin
 {

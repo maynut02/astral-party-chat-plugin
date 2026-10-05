@@ -1,4 +1,4 @@
-# Astral Party Chat Plugin
+# AstralPartyChatPlugin
 
 아스트랄 파티 Steam판에서 같은 방의 참가자와 채팅할 수 있는 BepInEx 플러그인입니다. 방 번호와 Steam 닉네임을 자동으로 읽어 채팅방에 연결합니다.
 
@@ -12,7 +12,7 @@
 Windows x64의 Steam판을 대상으로 합니다. 게임에 **BepInEx 6의 Unity IL2CPP Windows x64 버전**이 먼저 설치되어 있어야 합니다. 처음 설치한다면 [BepInEx 설치 안내](https://docs.bepinex.dev/master/articles/user_guide/installation/unity_il2cpp.html)를 따라 설치한 뒤 게임을 한 번 실행하고 종료하세요. 이 플러그인에는 BepInEx가 포함되어 있지 않습니다.
 
 1. 게임을 종료합니다.
-2. [Releases](https://github.com/maynut02/astral-party-chat-plugin/releases)에서 `AstralParty.Chat-v버전.zip`을 내려받아 압축을 풉니다.
+2. [Releases](https://github.com/maynut02/astral-party-chat-plugin/releases)에서 `AstralPartyChatPlugin-v버전.zip`을 내려받아 압축을 풉니다.
 3. Steam 라이브러리에서 아스트랄 파티를 우클릭하고 **관리 → 로컬 파일 보기**를 선택합니다.
 4. 열린 폴더 안의 `8vJXnINT` 폴더로 들어갑니다. `AstralParty_INT.exe`와 기존 `BepInEx` 폴더가 있는 위치입니다.
 5. 압축에서 꺼낸 `BepInEx` 폴더를 이 위치에 복사하고, 기존 폴더와 합칩니다.
@@ -25,11 +25,11 @@ Astral Party/
    ├─ AstralParty_INT.exe
    └─ BepInEx/
       └─ plugins/
-         └─ AstralPartyChat/
-            └─ AstralParty.Chat.dll
+         └─ AstralPartyChatPlugin/
+            └─ AstralPartyChatPlugin.dll
 ```
 
-DLL 파일만 받은 경우에는 `BepInEx/plugins/AstralPartyChat` 폴더를 만들고 그 안에 넣으세요. `SHA256SUMS.txt`는 다운로드 파일의 무결성 확인용이며 설치할 필요가 없습니다.
+DLL 파일만 받은 경우에는 `BepInEx/plugins/AstralPartyChatPlugin` 폴더를 만들고 그 안에 넣으세요. `SHA256SUMS.txt`는 다운로드 파일의 무결성 확인용이며 설치할 필요가 없습니다.
 
 ## 사용 방법
 
@@ -41,9 +41,9 @@ DLL 파일만 받은 경우에는 `BepInEx/plugins/AstralPartyChat` 폴더를 �
 
 ## 업데이트와 제거
 
-업데이트할 때는 게임을 종료한 뒤 새 버전의 DLL로 교체하세요. `BepInEx/plugins`의 다른 위치에 이전 `AstralParty.Chat.dll`이 남아 있다면 제거하고 한 개만 유지하세요.
+업데이트할 때는 게임을 종료한 뒤 새 버전의 DLL로 교체하세요. 이전 이름인 `AstralParty.Chat.dll`을 사용하고 있었다면 해당 파일을 제거하세요. `BepInEx/plugins`에는 최신 `AstralPartyChatPlugin.dll`을 한 개만 유지하세요.
 
-플러그인을 제거하려면 게임을 종료하고 `BepInEx/plugins/AstralPartyChat` 폴더를 삭제하세요. 다른 플러그인이 사용하는 BepInEx 폴더 전체를 삭제할 필요는 없습니다.
+플러그인을 제거하려면 게임을 종료하고 `BepInEx/plugins/AstralPartyChatPlugin` 폴더를 삭제하세요. 다른 플러그인이 사용하는 BepInEx 폴더 전체를 삭제할 필요는 없습니다.
 
 ## 문제가 생겼을 때
 
@@ -64,7 +64,7 @@ BepInEx가 초기화된 게임과 Git이 있는 Windows 환경에서, 저장소 
 .\scripts\package-release.ps1
 ```
 
-`setup.ps1`은 빌드용 참조 DLL과 로컬 .NET SDK를 준비합니다. 빌드 결과는 `dist/AstralParty.Chat.dll`, 패키지는 `dist/release/v버전/`에 생성됩니다. 버전은 `VERSION` 파일을 기준으로 하며, 새 릴리즈 버전 준비와 GitHub 업로드 절차는 별도입니다.
+`setup.ps1`은 빌드용 참조 DLL과 로컬 .NET SDK를 준비합니다. 빌드 결과는 `dist/AstralPartyChatPlugin.dll`, 패키지는 `dist/release/v버전/`에 생성됩니다. 버전은 `VERSION` 파일을 기준으로 하며, 새 릴리즈 버전 준비와 GitHub 업로드 절차는 별도입니다.
 
 - [개발 환경과 검증](docs/development.md)
 - [버전 관리와 수동 릴리즈](docs/releases.md)

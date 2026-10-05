@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 internal static partial class ChatOverlay
 {

@@ -1,7 +1,7 @@
 using System.Net;
 using System.Reflection;
 using System.Text.Json;
-using AstralParty.Chat;
+using AstralPartyChatPlugin;
 
 var tests = new List<(string Name, Func<Task> Run)>
 {

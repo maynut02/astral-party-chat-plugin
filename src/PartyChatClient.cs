@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using BepInEx.Logging;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 internal sealed class PartyUiSnapshot
 {
@@ -47,7 +47,7 @@ internal sealed partial class PartyChatClient : IDisposable
         _http = http ?? new HttpClient();
         _options = options ?? new PartyChatOptions();
         _http.Timeout = TimeSpan.FromSeconds(10);
-        _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "AstralPartyChat/" + AstralPartyChatPlugin.PluginVersion);
+        _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "AstralPartyChatPlugin/" + AstralPartyChatPlugin.PluginVersion);
         _http.DefaultRequestHeaders.TryAddWithoutValidation("Origin", _options.SiteOrigin);
         _http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json");
     }

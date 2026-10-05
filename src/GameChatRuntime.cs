@@ -10,7 +10,7 @@ using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 internal sealed class GamePortraitResource
 {

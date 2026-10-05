@@ -118,7 +118,7 @@ $existingTags = (Invoke-ReleaseGit @('tag', '--list', $tag))
 if ($existingTags) { throw 'The target release tag already exists. Prepare a newer version.' }
 
 $notes = [Collections.Generic.List[string]]::new()
-$notes.Add("# ChatPlugin $tag")
+$notes.Add("# AstralPartyChatPlugin $tag")
 $notes.Add('')
 if (-not $previousTag) { $notes.Add('첫 릴리즈입니다.'); $notes.Add('') }
 $notes.Add('## 변경 사항')
@@ -130,7 +130,7 @@ if ($commits.Count -eq 0) { $notes.Add('- 버전 및 배포 준비') }
 $notes.Add('')
 $notes.Add('## 설치')
 $notes.Add('')
-$notes.Add("게임을 종료하고 ``AstralParty.Chat-$tag.zip``의 ``BepInEx`` 폴더를 게임 실행 파일이 있는 폴더에 복사하세요. BepInEx IL2CPP가 먼저 설치되어 있어야 합니다. 기존 채팅 DLL은 새 DLL로 교체하고 중복 사본을 제거하세요.")
+$notes.Add("게임을 종료하고 ``AstralPartyChatPlugin-$tag.zip``의 ``BepInEx`` 폴더를 게임 실행 파일이 있는 폴더에 복사하세요. BepInEx IL2CPP가 먼저 설치되어 있어야 합니다. 기존 채팅 DLL은 새 DLL로 교체하고 중복 사본을 제거하세요.")
 $notesPath = Join-Path $RepositoryRoot ".work/releases/$tag/release-notes.md"
 if (-not $Preview) {
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($notesPath)) | Out-Null
@@ -142,7 +142,7 @@ if (-not $Preview) {
 [pscustomobject]@{
     Version = $target
     Tag = $tag
-    Title = "ChatPlugin $tag"
+    Title = "AstralPartyChatPlugin $tag"
     PreviousTag = $previousTag
     DetectedBump = $detected
     CommitCount = $commits.Count

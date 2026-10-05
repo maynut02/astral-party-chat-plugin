@@ -8,7 +8,7 @@ namespace BepInEx.Logging
     }
 }
 
-namespace AstralParty.Chat
+namespace AstralPartyChatPlugin
 {
     public static class AstralPartyChatPlugin
     {

@@ -7,17 +7,18 @@ using HarmonyLib;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-[assembly: AssemblyVersion(AstralParty.Chat.AstralPartyChatPlugin.PluginVersion)]
-[assembly: AssemblyFileVersion(AstralParty.Chat.AstralPartyChatPlugin.PluginVersion)]
-[assembly: AssemblyInformationalVersion(AstralParty.Chat.AstralPartyChatPlugin.PluginVersion)]
+[assembly: AssemblyVersion(global::AstralPartyChatPlugin.AstralPartyChatPlugin.PluginVersion)]
+[assembly: AssemblyFileVersion(global::AstralPartyChatPlugin.AstralPartyChatPlugin.PluginVersion)]
+[assembly: AssemblyInformationalVersion(global::AstralPartyChatPlugin.AstralPartyChatPlugin.PluginVersion)]
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
 public sealed partial class AstralPartyChatPlugin : BasePlugin
 {
+    // Keep the installed plugin identity stable across display/assembly renames.
     public const string PluginGuid = "astral-party.chat";
-    public const string PluginName = "Astral Party Chat";
+    public const string PluginName = "AstralPartyChatPlugin";
 
     private Harmony? _harmony;
     private PartyChatClient? _client;
@@ -70,12 +71,12 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
                 }
             }
 
-            Log.LogInfo("Astral Party Chat " + PluginVersion + " loaded.");
+            Log.LogInfo("AstralPartyChatPlugin " + PluginVersion + " loaded.");
         }
         catch (Exception ex)
         {
             Unload();
-            Log.LogError("Astral Party Chat initialization failed: " + ex);
+            Log.LogError("AstralPartyChatPlugin initialization failed: " + ex);
         }
     }
 

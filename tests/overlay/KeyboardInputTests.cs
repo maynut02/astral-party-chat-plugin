@@ -3,7 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using AstralParty.Chat;
+using AstralPartyChatPlugin;
+using PluginEntryPoint = AstralPartyChatPlugin.AstralPartyChatPlugin;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -108,10 +109,10 @@ internal static class KeyboardInputTests
             InvokePrefix("GameSubmitEventPrefix", true);
             Method("ResetChatKeyboardInputState").Invoke(null, null);
             foreach (var name in new[] { "_gameGuiEvent", "_ignoredGameGuiEvent" })
-                Assert(typeof(AstralPartyChatPlugin).GetField(name, BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null) == null,
+                Assert(typeof(PluginEntryPoint).GetField(name, BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null) == null,
                     "Cleanup retained the Unity event cache: " + name);
             foreach (var name in new[] { "_reportedNativeGuiCapture", "_reportedCurrentGuiCapture", "_reportedGameSubmitCapture" })
-                Assert(typeof(AstralPartyChatPlugin).GetField(name, BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null) is false,
+                Assert(typeof(PluginEntryPoint).GetField(name, BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null) is false,
                     "Cleanup retained capture diagnostics: " + name);
             Assert(!ReferenceEquals(CurrentGuiEvent(KeyEvent(KeyCode.Return)), ignored), "Reload reused the previous Unity event.");
         });
@@ -433,7 +434,7 @@ internal static class KeyboardInputTests
         if (runOriginal || (InputField.EditState)args[2]! == InputField.EditState.Finish)
             field.DeactivateInputField();
     }
-    private static MethodInfo Method(string name) => typeof(AstralPartyChatPlugin).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!;
+    private static MethodInfo Method(string name) => typeof(PluginEntryPoint).GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!;
     private static (bool RunOriginal, object? Value) InvokePrefix(string methodName, object value)
     {
         var args = new[] { value };

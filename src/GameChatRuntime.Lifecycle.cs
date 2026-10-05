@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 internal static partial class GameChatRuntime
 {

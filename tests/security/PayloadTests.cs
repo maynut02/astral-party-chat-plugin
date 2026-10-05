@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Reflection;
 using System.Text.Json;
-using AstralParty.Chat;
+using AstralPartyChatPlugin;
 using BepInEx.Logging;
 
 var tests = new List<(string Name, Func<Task> Run)>

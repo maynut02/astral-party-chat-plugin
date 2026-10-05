@@ -79,15 +79,15 @@ git rev-parse HEAD
 
 ```text
 dist/release/v0.0.1/
-├─ AstralParty.Chat-v0.0.1.zip
-├─ AstralParty.Chat.dll
+├─ AstralPartyChatPlugin-v0.0.1.zip
+├─ AstralPartyChatPlugin.dll
 └─ SHA256SUMS.txt
 ```
 
 ZIP에는 다음 DLL 한 개만 들어갑니다.
 
 ```text
-BepInEx/plugins/AstralPartyChat/AstralParty.Chat.dll
+BepInEx/plugins/AstralPartyChatPlugin/AstralPartyChatPlugin.dll
 ```
 
 게임 참조 DLL, BepInEx 본체, SDK, PDB, 문서는 패키지에 넣지 않습니다. 별도 DLL은 수동 교체용이며 `SHA256SUMS.txt`는 ZIP과 DLL의 SHA-256을 기록합니다.
@@ -101,7 +101,7 @@ BepInEx/plugins/AstralPartyChat/AstralParty.Chat.dll
 | 항목 | 첫 배포 예시 |
 | --- | --- |
 | 태그 | `v0.0.1` |
-| 제목 | `ChatPlugin v0.0.1` |
+| 제목 | `AstralPartyChatPlugin v0.0.1` |
 | 설명 | `.work/releases/v0.0.1/release-notes.md`를 검토하고 붙여넣기 |
 | 첨부 파일 | `dist/release/v0.0.1/`의 ZIP·DLL·SHA256SUMS.txt |
 

@@ -47,7 +47,7 @@ C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT
 .\scripts\build.ps1
 ```
 
-결과는 `dist/AstralParty.Chat.dll`입니다. 스크립트는 `.work/dotnet`의 SDK를 우선 사용하고, 없으면 시스템의 `dotnet`을 사용합니다. 빌드는 게임에 플러그인을 설치하지 않습니다. 테스트할 DLL은 [README의 설치 위치](../README.md#설치)에 직접 복사하세요.
+결과는 `dist/AstralPartyChatPlugin.dll`입니다. 스크립트는 `.work/dotnet`의 SDK를 우선 사용하고, 없으면 시스템의 `dotnet`을 사용합니다. 빌드는 게임에 플러그인을 설치하지 않습니다. 테스트할 DLL은 [README의 설치 위치](../README.md#설치)에 직접 복사하세요.
 
 게임 업데이트 후 참조만 갱신하려면 실행합니다.
 

@@ -1,6 +1,6 @@
 using System;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 /// <summary>
 /// Tracks the room and player details observed from the game without depending

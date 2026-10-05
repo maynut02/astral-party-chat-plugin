@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 internal static partial class ChatOverlay
 {

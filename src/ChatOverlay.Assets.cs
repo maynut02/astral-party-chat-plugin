@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 internal static partial class ChatOverlay
 {
@@ -43,7 +43,7 @@ internal static partial class ChatOverlay
         };
         client.DefaultRequestHeaders.TryAddWithoutValidation(
             "User-Agent",
-            "AstralPartyChat/" + AstralPartyChatPlugin.PluginVersion);
+            "AstralPartyChatPlugin/" + AstralPartyChatPlugin.PluginVersion);
         client.DefaultRequestHeaders.TryAddWithoutValidation(
             "Origin",
             "https://astral.maynutlab.com");
@@ -242,7 +242,7 @@ internal static partial class ChatOverlay
                     throw new System.IO.InvalidDataException("Portrait PNG dimensions or format rejected.");
                 texture = TrackOwnedUnityResource(
                     new Texture2D(2, 2, TextureFormat.RGBA32, false));
-                texture.name = "AstralPartyChatCharacter_" + item.CharacterId;
+                texture.name = "AstralPartyChatPluginCharacter_" + item.CharacterId;
                 texture.wrapMode = TextureWrapMode.Clamp;
                 texture.filterMode = FilterMode.Bilinear;
 

@@ -4,7 +4,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
-using AstralParty.Chat;
+using AstralPartyChatPlugin;
 using BepInEx.Logging;
 
 internal sealed class Fixture : IDisposable

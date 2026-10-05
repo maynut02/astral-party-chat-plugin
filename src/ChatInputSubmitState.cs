@@ -1,6 +1,6 @@
 using System;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 /// <summary>
 /// Converts keyboard and explicit-send events into one-frame submit tokens.

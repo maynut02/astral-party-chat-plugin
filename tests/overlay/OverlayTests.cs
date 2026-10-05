@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using AstralParty.Chat;
+using AstralPartyChatPlugin;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityObject = UnityEngine.Object;

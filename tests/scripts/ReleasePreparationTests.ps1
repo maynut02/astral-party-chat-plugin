@@ -60,7 +60,7 @@ Test-Case 'first-release-keeps-0.0.1-and-generates-korean-notes' {
     Add-TestCommit $root 'feat: 채팅 기능 추가'
     Add-TestCommit $root 'fix: 입력 처리 수정'
     $result = & $prepare -RepositoryRoot $root
-    Assert-True ($result.Version -ceq '0.0.1' -and $result.Tag -ceq 'v0.0.1' -and $result.Title -ceq 'ChatPlugin v0.0.1') 'First release version changed.'
+    Assert-True ($result.Version -ceq '0.0.1' -and $result.Tag -ceq 'v0.0.1' -and $result.Title -ceq 'AstralPartyChatPlugin v0.0.1') 'First release version changed.'
     Assert-True ($result.CommitCount -eq 3 -and -not $result.VersionChanged) 'First release did not aggregate history.'
     $notes = [IO.File]::ReadAllText($result.NotesPath)
     Assert-True ($notes.Contains('채팅 기능 추가') -and $notes.Contains('입력 처리 수정') -and $notes.Contains('BepInEx')) 'Korean release notes were corrupted.'
@@ -242,24 +242,24 @@ Test-Case 'real-project-generates-plugin-and-dll-versions-and-rejects-overrides'
     $src = Join-Path $root 'src'
     [IO.Directory]::CreateDirectory($src) | Out-Null
     # Exercise the production MSBuild target without redistributing game DLLs.
-    [xml]$project = [IO.File]::ReadAllText((Join-Path $repoRoot 'src/AstralParty.Chat.csproj'))
+    [xml]$project = [IO.File]::ReadAllText((Join-Path $repoRoot 'src/AstralPartyChatPlugin.csproj'))
     foreach ($reference in @($project.SelectNodes('//Reference'))) { $reference.ParentNode.RemoveChild($reference) | Out-Null }
-    $projectPath = Join-Path $src 'AstralParty.Chat.csproj'
+    $projectPath = Join-Path $src 'AstralPartyChatPlugin.csproj'
     $project.Save($projectPath)
     [IO.File]::WriteAllText((Join-Path $root 'NuGet.Config'), '<configuration><packageSources><clear /></packageSources></configuration>', $utf8)
     $fixture = @'
 using System;
 using System.Reflection;
 using BepInEx;
-[assembly: AssemblyVersion(AstralParty.Chat.AstralPartyChatPlugin.PluginVersion)]
-[assembly: AssemblyFileVersion(AstralParty.Chat.AstralPartyChatPlugin.PluginVersion)]
-[assembly: AssemblyInformationalVersion(AstralParty.Chat.AstralPartyChatPlugin.PluginVersion)]
+[assembly: AssemblyVersion(global::AstralPartyChatPlugin.AstralPartyChatPlugin.PluginVersion)]
+[assembly: AssemblyFileVersion(global::AstralPartyChatPlugin.AstralPartyChatPlugin.PluginVersion)]
+[assembly: AssemblyInformationalVersion(global::AstralPartyChatPlugin.AstralPartyChatPlugin.PluginVersion)]
 namespace BepInEx {
     public sealed class BepInPlugin : Attribute {
         public BepInPlugin(string guid, string name, string version) { }
     }
 }
-namespace AstralParty.Chat {
+namespace AstralPartyChatPlugin {
     [BepInPlugin("fixture", "fixture", PluginVersion)]
     public sealed partial class AstralPartyChatPlugin { }
 }
@@ -271,12 +271,12 @@ namespace AstralParty.Chat {
         [IO.File]::WriteAllText((Join-Path $root 'VERSION'), "$version`n", $utf8)
         $output = @(& $dotnet build $projectPath --configuration Release --nologo 2>&1)
         if ($LASTEXITCODE -ne 0) { throw "Version stamp build failed: $($output -join "`n")" }
-        $dll = Join-Path $src 'bin/Release/net6.0/AstralParty.Chat.dll'
+        $dll = Join-Path $src 'bin/Release/net6.0/AstralPartyChatPlugin.dll'
         $metadata = [Diagnostics.FileVersionInfo]::GetVersionInfo($dll)
         Assert-True ($metadata.ProductVersion -ceq $version -and $metadata.FileVersion -ceq $version) 'DLL metadata differs from VERSION.'
         Assert-True ([Reflection.AssemblyName]::GetAssemblyName($dll).Version.ToString() -ceq "$version.0") 'Assembly version differs from VERSION.'
         $assembly = [Reflection.Assembly]::Load([IO.File]::ReadAllBytes($dll))
-        $plugin = $assembly.GetType('AstralParty.Chat.AstralPartyChatPlugin')
+        $plugin = $assembly.GetType('AstralPartyChatPlugin.AstralPartyChatPlugin')
         Assert-True ($plugin.GetField('PluginVersion').GetRawConstantValue() -ceq $version) 'Generated constant differs from VERSION.'
         Assert-True ($plugin.CustomAttributes.ConstructorArguments[2].Value -ceq $version) 'BepInPlugin metadata differs from VERSION.'
     }

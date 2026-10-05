@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$project = Join-Path $repoRoot 'src\AstralParty.Chat.csproj'
+$project = Join-Path $repoRoot 'src\AstralPartyChatPlugin.csproj'
 . (Join-Path $PSScriptRoot 'project-version.ps1')
 $Version = Get-AstralProjectVersion -Root $repoRoot
 $OutputRoot = Join-Path $repoRoot 'dist'
@@ -43,10 +43,10 @@ if ($RefsRoot) {
 
 & $dotnet @buildArgs
 if ($LASTEXITCODE -ne 0) {
-    throw 'Astral Party Chat build failed.'
+    throw 'AstralPartyChatPlugin build failed.'
 }
 
-$dll = Join-Path $repoRoot 'src\bin\Release\net6.0\AstralParty.Chat.dll'
+$dll = Join-Path $repoRoot 'src\bin\Release\net6.0\AstralPartyChatPlugin.dll'
 if (-not (Test-Path -LiteralPath $dll)) {
     throw "Missing build output: $dll"
 }
@@ -55,7 +55,7 @@ if ([Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion -cne $Ver
 }
 
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
-Copy-Item -LiteralPath $dll -Destination (Join-Path $OutputRoot 'AstralParty.Chat.dll') -Force
+Copy-Item -LiteralPath $dll -Destination (Join-Path $OutputRoot 'AstralPartyChatPlugin.dll') -Force
 
-Write-Output "dll=$(Join-Path $OutputRoot 'AstralParty.Chat.dll')"
+Write-Output "dll=$(Join-Path $OutputRoot 'AstralPartyChatPlugin.dll')"
 Write-Output "version=$Version"

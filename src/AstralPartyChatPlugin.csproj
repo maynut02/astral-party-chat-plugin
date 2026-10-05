@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <AssemblyName>AstralParty.Chat</AssemblyName>
-    <RootNamespace>AstralParty.Chat</RootNamespace>
+    <AssemblyName>AstralPartyChatPlugin</AssemblyName>
+    <RootNamespace>AstralPartyChatPlugin</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
@@ -81,7 +81,7 @@
     <PropertyGroup>
       <AstralGeneratedVersionFile>$(IntermediateOutputPath)AstralPluginVersion.g.cs</AstralGeneratedVersionFile>
     </PropertyGroup>
-    <WriteLinesToFile File="$(AstralGeneratedVersionFile)" Lines="namespace AstralParty.Chat { public sealed partial class AstralPartyChatPlugin { public const string PluginVersion = &quot;$(AstralPluginVersion)&quot;%3B } }" Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
+    <WriteLinesToFile File="$(AstralGeneratedVersionFile)" Lines="namespace AstralPartyChatPlugin { public sealed partial class AstralPartyChatPlugin { public const string PluginVersion = &quot;$(AstralPluginVersion)&quot;%3B } }" Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
     <ItemGroup>
       <Compile Include="$(AstralGeneratedVersionFile)" />
       <FileWrites Include="$(AstralGeneratedVersionFile)" />

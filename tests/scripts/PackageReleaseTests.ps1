@@ -12,22 +12,22 @@ $utf8 = [Text.UTF8Encoding]::new($false)
 . (Join-Path $repoRoot 'scripts/project-version.ps1')
 $version = Get-AstralProjectVersion -Root $repoRoot
 $tag = "v$version"
-$zipName = "AstralParty.Chat-$tag.zip"
+$zipName = "AstralPartyChatPlugin-$tag.zip"
 $localDotnet = Join-Path $repoRoot '.work/dotnet/dotnet.exe'
 $dotnet = if (Test-Path -LiteralPath $localDotnet) { $localDotnet } else { Get-Command dotnet -CommandType Application -ErrorAction Stop | Select-Object -First 1 -ExpandProperty Source }
-[IO.File]::WriteAllText((Join-Path $assemblyRoot 'Fixture.csproj'), "<Project Sdk=`"Microsoft.NET.Sdk`"><PropertyGroup><TargetFramework>net6.0</TargetFramework><AssemblyName>AstralParty.Chat</AssemblyName><Version>$version</Version><IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion></PropertyGroup></Project>", $utf8)
+[IO.File]::WriteAllText((Join-Path $assemblyRoot 'Fixture.csproj'), "<Project Sdk=`"Microsoft.NET.Sdk`"><PropertyGroup><TargetFramework>net6.0</TargetFramework><AssemblyName>AstralPartyChatPlugin</AssemblyName><Version>$version</Version><IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion></PropertyGroup></Project>", $utf8)
 [IO.File]::WriteAllText((Join-Path $assemblyRoot 'Fixture.cs'), 'public static class Fixture { }', $utf8)
 [IO.File]::WriteAllText((Join-Path $assemblyRoot 'NuGet.Config'), '<configuration><packageSources><clear /></packageSources></configuration>', $utf8)
 $dllRoot = Join-Path $testRoot 'dll'
 $output = @(& $dotnet build (Join-Path $assemblyRoot 'Fixture.csproj') --configuration Release --output $dllRoot --nologo 2>&1)
 if ($LASTEXITCODE -ne 0) { throw "Package fixture build failed: $($output -join "`n")" }
-$dll = Join-Path $dllRoot 'AstralParty.Chat.dll'
+$dll = Join-Path $dllRoot 'AstralPartyChatPlugin.dll'
 $assets = Join-Path $testRoot 'assets'
 & $package -DllPath $dll -OutputRoot $assets | Out-Null
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead((Join-Path $assets $zipName))
 try {
-    if ($archive.Entries.Count -ne 1 -or $archive.Entries[0].FullName -cne 'BepInEx/plugins/AstralPartyChat/AstralParty.Chat.dll') {
+    if ($archive.Entries.Count -ne 1 -or $archive.Entries[0].FullName -cne 'BepInEx/plugins/AstralPartyChatPlugin/AstralPartyChatPlugin.dll') {
         throw 'Distribution ZIP must contain only the plugin DLL at the installation path.'
     }
     $extracted = Join-Path $testRoot 'extracted'
@@ -37,12 +37,12 @@ try {
     }
 } finally { $archive.Dispose() }
 if (@(Get-ChildItem -LiteralPath $assets).Count -ne 3) { throw 'Unexpected release assets.' }
-if ((Get-FileHash -LiteralPath $dll).Hash -cne (Get-FileHash -LiteralPath (Join-Path $assets 'AstralParty.Chat.dll')).Hash) { throw 'Standalone DLL differs.' }
+if ((Get-FileHash -LiteralPath $dll).Hash -cne (Get-FileHash -LiteralPath (Join-Path $assets 'AstralPartyChatPlugin.dll')).Hash) { throw 'Standalone DLL differs.' }
 $checksums = [IO.File]::ReadAllLines((Join-Path $assets 'SHA256SUMS.txt'))
 if ($checksums.Count -ne 2) { throw 'Release manifest must include the ZIP and standalone DLL.' }
 foreach ($line in $checksums) {
     $parts = $line -split '  ', 2
-    if ($parts[1] -cnotin @('AstralParty.Chat.dll', $zipName)) { throw 'Unexpected release checksum entry.' }
+    if ($parts[1] -cnotin @('AstralPartyChatPlugin.dll', $zipName)) { throw 'Unexpected release checksum entry.' }
     if ((Get-FileHash -LiteralPath (Join-Path $assets $parts[1])).Hash.ToLowerInvariant() -cne $parts[0]) { throw 'Release checksum mismatch.' }
 }
 # Repackaging replaces the previous ZIP rather than retaining obsolete entries.

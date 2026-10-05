@@ -5,7 +5,7 @@ using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AstralParty.Chat;
+namespace AstralPartyChatPlugin;
 
 // Mirrors shared/types/party.ts and server/utils/party-chat.ts in astral-patch-site.
 internal static class PartyProtocol
