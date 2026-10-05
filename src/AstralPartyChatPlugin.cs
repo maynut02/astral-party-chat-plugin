@@ -8,6 +8,8 @@ using HarmonyLib;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
+[assembly: AssemblyVersion(AstralParty.Chat.AstralPartyChatPlugin.PluginVersion)]
+[assembly: AssemblyFileVersion(AstralParty.Chat.AstralPartyChatPlugin.PluginVersion)]
 [assembly: AssemblyInformationalVersion(AstralParty.Chat.AstralPartyChatPlugin.PluginVersion)]
 
 namespace AstralParty.Chat;
@@ -17,11 +19,7 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
 {
     public const string PluginGuid = "astral-party.chat";
     public const string PluginName = "Astral Party Chat";
-#if ASTRAL_BUILD_VERSION
-    public const string PluginVersion = AstralBuildVersion.Value;
-#else
-    public const string PluginVersion = "1.0.7";
-#endif
+    public const string PluginVersion = "0.0.1";
 
     private Harmony? _harmony;
     private PartyChatClient? _client;

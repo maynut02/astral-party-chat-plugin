@@ -9,12 +9,7 @@
     <Optimize>true</Optimize>
     <DebugType>portable</DebugType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <DefineConstants Condition="'$(AstralBuildVersionSource)' != ''">$(DefineConstants);ASTRAL_BUILD_VERSION</DefineConstants>
   </PropertyGroup>
-
-  <ItemGroup Condition="'$(AstralBuildVersionSource)' != ''">
-    <Compile Include="$(AstralBuildVersionSource)" Link="AstralBuildVersion.g.cs" />
-  </ItemGroup>
 
   <PropertyGroup>
     <RepositoryRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..'))</RepositoryRoot>

@@ -190,22 +190,38 @@ HTTP 408/409/429/5xx 및 일시적 연결·저장소 오류는 재시도합니�
 
 ## 수동 로컬 패키징
 
-게임 참조 DLL이 준비된 개발환경에서 빌드와 ZIP 패키징을 각각 실행합니다. 빌드 버전과 패키징 태그의 버전을 맞추세요.
+현재 버전은 `0.0.1`입니다. 버전의 기준은 `src/AstralPartyChatPlugin.cs`의 `PluginVersion` 한 곳이며, BepInEx 플러그인 정보·로그·HTTP User-Agent·DLL 제품/파일/어셈블리 버전이 이 값을 사용합니다. 제품·파일 버전은 `0.0.1`, 어셈블리 버전은 .NET의 네 자리 형식에 따라 `0.0.1.0`으로 표시됩니다.
+
+게임 참조 DLL이 준비된 개발환경에서 빌드와 ZIP 패키징을 각각 실행합니다.
 
 ```powershell
-.\scripts\build.ps1 -Version 1.0.7
-.\scripts\package-release.ps1 -Tag v1.0.7
+.\scripts\build.ps1
+.\scripts\package-release.ps1 -Tag v0.0.1
 ```
 
-`release-version.ps1`은 빌드와 패키징의 버전 검증에 사용하는 헬퍼입니다. `-Tag`는 로컬 패키지의 버전과 ZIP 파일 이름을 지정하며 Git 태그를 생성하지 않습니다. 다른 버전으로 빌드하려면 `build.ps1 -Version 1.0.8`처럼 버전을 지정하고, 패키징 태그도 `v1.0.8`로 맞춥니다.
+`release-version.ps1`은 빌드와 패키징의 버전 검증에 사용하는 헬퍼입니다. `build.ps1 -Version 0.0.1`처럼 버전을 명시할 수도 있지만 코드의 `PluginVersion`과 같아야 합니다. `-Version`이 코드 버전을 바꾸지는 않습니다. 패키징의 `-Tag`는 로컬 패키지의 버전과 ZIP 파일 이름을 지정하며 Git 태그를 생성하지 않습니다. DLL과 패키징 버전이 다르면 생성을 중단합니다.
 
-패키지는 `dist/release`에 생성됩니다.
+패키지는 `dist/release/<태그>`에 생성됩니다. 버전마다 별도 폴더를 사용합니다.
 
 ```text
-dist/release/
+dist/release/v0.0.1/
 ├─ AstralParty.Chat.dll
-├─ AstralParty.Chat-v1.0.7.zip
+├─ AstralParty.Chat-v0.0.1.zip
 └─ SHA256SUMS.txt
 ```
 
 설치 ZIP에는 플러그인 DLL과 설치기 `Install.cmd`가 포함됩니다. 사용자는 ZIP 전체를 풀고 `Install.cmd`를 실행하면 됩니다. 별도 DLL은 수동 교체용이고 `SHA256SUMS.txt`는 파일의 무결성 확인용입니다. 게임·Unity·IL2CPP 참조 DLL과 로컬 SDK, PDB, 내부 문서는 패키지에 포함하지 않습니다.
+
+## 수동 Release와 버전 관리
+
+초기 개발의 `0.x` 단계에서는 버그 수정은 `0.0.1 → 0.0.2`, 기능 추가나 큰 변경은 `0.0.1 → 0.1.0`처럼 올리는 방식을 사용합니다. 안정적인 첫 정식 버전은 `1.0.0`으로 정하고, 이후 호환되지 않는 변경은 major, 기능 추가는 minor, 버그 수정은 patch를 올립니다. 이미 공개한 버전의 파일을 변경할 때는 새 버전을 사용합니다. [SemVer 규칙](https://semver.org/lang/ko/)
+
+배포 순서:
+
+1. `PluginVersion`을 배포할 버전으로 변경합니다. 첫 배포는 현재 값인 `0.0.1`입니다.
+2. 회귀 검사와 실제 게임 확인을 수행하고 `chore: 플러그인 버전을 0.0.1로 설정`처럼 커밋한 뒤 push합니다.
+3. 커밋한 소스를 `build.ps1`로 빌드하고, 같은 버전으로 `package-release.ps1 -Tag v0.0.1`을 실행합니다.
+4. GitHub의 새 Release에서 태그를 `v0.0.1`, 대상은 해당 소스 커밋, 제목은 `ChatPlugin v0.0.1`로 선택합니다.
+5. `dist/release/v0.0.1/`의 파일을 직접 첨부하고 게시합니다. 일반 사용자는 ZIP 하나만 받으면 됩니다.
+
+커밋 메시지의 `feat:`·`fix:`·`chore:` 타입은 변경 내역을 설명하는 용도입니다. 버전과 GitHub Release는 직접 정하며 커밋 메시지가 자동으로 버전을 올리지는 않습니다.

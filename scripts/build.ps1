@@ -15,6 +15,14 @@ $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (-not $SourceRoot) { $SourceRoot = $repoRoot }
 $SourceRoot = [IO.Path]::GetFullPath($SourceRoot)
 $project = Join-Path $SourceRoot 'src\AstralParty.Chat.csproj'
+$pluginSource = [IO.File]::ReadAllText((Join-Path $SourceRoot 'src\AstralPartyChatPlugin.cs'))
+$versionMatch = [regex]::Match($pluginSource, 'public const string PluginVersion = "([0-9]+\.[0-9]+\.[0-9]+)";')
+if (-not $versionMatch.Success) { throw 'Missing canonical PluginVersion in the source.' }
+$resolved = & (Join-Path $PSScriptRoot 'release-version.ps1') -InitialVersion $versionMatch.Groups[1].Value -ExplicitTag "v$($versionMatch.Groups[1].Value)"
+if ($Version -and $Version -cne $resolved.Version) {
+    throw 'Build version must match PluginVersion in src/AstralPartyChatPlugin.cs. Update the source version first.'
+}
+$Version = $resolved.Version
 if (-not $OutputRoot) { $OutputRoot = Join-Path $repoRoot 'dist' }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $localRefs = Join-Path $repoRoot '.work\refs'
@@ -44,7 +52,8 @@ $buildArgs = @(
     $project,
     '--configuration', 'Release',
     '--nologo',
-    "-p:AstralGameRoot=$GameRoot"
+    "-p:AstralGameRoot=$GameRoot",
+    "-p:Version=$Version"
 )
 
 if ($RefsRoot) {
@@ -59,16 +68,6 @@ if ($BuildRoot) {
     $buildArgs += "-p:BaseIntermediateOutputPath=$objRoot$([IO.Path]::DirectorySeparatorChar)"
 }
 
-if ($Version) {
-    # Validate before writing C# or passing properties to MSBuild.
-    $resolved = & (Join-Path $PSScriptRoot 'release-version.ps1') -InitialVersion $Version -ExplicitTag "v$Version"
-    $versionSource = if ($BuildRoot) { Join-Path $BuildRoot 'generated\AstralBuildVersion.g.cs' } else { Join-Path $repoRoot '.work\generated\AstralBuildVersion.g.cs' }
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $versionSource) | Out-Null
-    $content = "internal static class AstralBuildVersion { public const string Value = `"$($resolved.Version)`"; }"
-    [IO.File]::WriteAllText($versionSource, $content, [Text.UTF8Encoding]::new($false))
-    $buildArgs += "-p:AstralBuildVersionSource=$versionSource"
-}
-
 & $dotnet @buildArgs
 if ($LASTEXITCODE -ne 0) {
     throw 'Astral Party Chat build failed.'
@@ -78,7 +77,7 @@ $dll = if ($BuildRoot) { Join-Path $BuildRoot 'bin\Release\net6.0\AstralParty.Ch
 if (-not (Test-Path -LiteralPath $dll)) {
     throw "Missing build output: $dll"
 }
-if ($Version -and [Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion -cne $Version) {
+if ([Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion -cne $Version) {
     throw 'Built DLL version does not match the requested release version.'
 }
 
@@ -91,3 +90,4 @@ if ($Deploy) {
 }
 
 Write-Output "dll=$(Join-Path $OutputRoot 'AstralParty.Chat.dll')"
+Write-Output "version=$Version"

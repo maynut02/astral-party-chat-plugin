@@ -69,15 +69,15 @@ function Invoke-CommandCase([string]$Name, [scriptblock]$Body) {
 
 try {
     $project = Join-Path $testRoot 'assembly'
-    Write-FixtureFile (Join-Path $project 'Fixture.csproj') '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net6.0</TargetFramework><AssemblyName>AstralParty.Chat</AssemblyName><Version>1.0.7</Version><IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion></PropertyGroup></Project>'
+    Write-FixtureFile (Join-Path $project 'Fixture.csproj') '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net6.0</TargetFramework><AssemblyName>AstralParty.Chat</AssemblyName><Version>0.0.1</Version><IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion></PropertyGroup></Project>'
     Write-FixtureFile (Join-Path $project 'Fixture.cs') 'public static class Fixture { }'
     Write-FixtureFile (Join-Path $project 'NuGet.Config') '<configuration><packageSources><clear /></packageSources></configuration>'
     $assemblyRoot = Join-Path $testRoot 'dll'
     $buildOutput = @(& $dotnet build (Join-Path $project 'Fixture.csproj') --configuration Release --output $assemblyRoot --nologo 2>&1)
     if ($LASTEXITCODE -ne 0) { throw "Installer fixture assembly build failed: $($buildOutput -join "`n")" }
     $assets = Join-Path $testRoot 'assets'
-    & (Join-Path $repoRoot 'scripts/package-release.ps1') -Tag v1.0.7 -DllPath (Join-Path $assemblyRoot 'AstralParty.Chat.dll') -OutputRoot $assets
-    $zipPath = Join-Path $assets 'AstralParty.Chat-v1.0.7.zip'
+    & (Join-Path $repoRoot 'scripts/package-release.ps1') -Tag v0.0.1 -DllPath (Join-Path $assemblyRoot 'AstralParty.Chat.dll') -OutputRoot $assets
+    $zipPath = Join-Path $assets 'AstralParty.Chat-v0.0.1.zip'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
 
     Invoke-CommandCase 'zip-contains-only-plugin-and-command' {

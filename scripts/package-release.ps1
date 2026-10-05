@@ -18,9 +18,9 @@ $installerText = Get-AstralDistributionInstaller -InstallerScriptPath $Installer
 if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { throw 'Run scripts/build.ps1 before packaging.' }
 if ([Reflection.AssemblyName]::GetAssemblyName($dll).Name -cne 'AstralParty.Chat') { throw 'Unexpected plugin assembly.' }
 if ([Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion -cne $version) {
-    throw 'Release tag must match the built DLL version. Rebuild with scripts/build.ps1 -Version before packaging.'
+    throw 'Package tag must match the built DLL version. Update PluginVersion and rebuild before packaging.'
 }
-if (-not $OutputRoot) { $OutputRoot = Join-Path $repoRoot 'dist\release' }
+if (-not $OutputRoot) { $OutputRoot = Join-Path (Join-Path $repoRoot 'dist\release') $Tag }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $zipName = "AstralParty.Chat-$Tag.zip"
 $allowed = @('AstralParty.Chat.dll', $zipName, 'SHA256SUMS.txt')
