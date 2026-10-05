@@ -53,7 +53,7 @@ DLL 파일만 받은 경우에는 `BepInEx/plugins/AstralPartyChatPlugin` 폴더
 
 해결되지 않으면 [Issues](https://github.com/maynut02/astral-party-chat-plugin/issues)에 플러그인 버전, 문제가 발생한 화면, 재현 방법과 `BepInEx/LogOutput.txt`의 관련 내용을 알려주세요. 로그를 공개하기 전에 닉네임·방 번호·개인 경로 등은 가려주세요.
 
-## 직접 빌드하려는 개발자
+## 빌드
 
 BepInEx가 초기화된 게임과 Git이 있는 Windows 환경에서, 저장소 폴더의 PowerShell로 실행합니다.
 
