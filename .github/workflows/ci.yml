@@ -42,4 +42,6 @@ jobs:
         run: ./tests/scripts/DistributionInstallerTests.ps1
       - name: Release version regression checks
         run: ./tests/scripts/ReleaseVersionTests.ps1
+      - name: Local release preparation regression checks
+        run: ./tests/scripts/ReleasePreparationTests.ps1
 

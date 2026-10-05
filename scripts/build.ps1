@@ -15,14 +15,12 @@ $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (-not $SourceRoot) { $SourceRoot = $repoRoot }
 $SourceRoot = [IO.Path]::GetFullPath($SourceRoot)
 $project = Join-Path $SourceRoot 'src\AstralParty.Chat.csproj'
-$pluginSource = [IO.File]::ReadAllText((Join-Path $SourceRoot 'src\AstralPartyChatPlugin.cs'))
-$versionMatch = [regex]::Match($pluginSource, 'public const string PluginVersion = "([0-9]+\.[0-9]+\.[0-9]+)";')
-if (-not $versionMatch.Success) { throw 'Missing canonical PluginVersion in the source.' }
-$resolved = & (Join-Path $PSScriptRoot 'release-version.ps1') -InitialVersion $versionMatch.Groups[1].Value -ExplicitTag "v$($versionMatch.Groups[1].Value)"
-if ($Version -and $Version -cne $resolved.Version) {
-    throw 'Build version must match PluginVersion in src/AstralPartyChatPlugin.cs. Update the source version first.'
+. (Join-Path $PSScriptRoot 'project-version.ps1')
+$projectVersion = Get-AstralProjectVersion -Root $SourceRoot
+if ($Version -and $Version -cne $projectVersion) {
+    throw 'Build version must match the VERSION file. Run scripts/prepare-release.ps1 first.'
 }
-$Version = $resolved.Version
+$Version = $projectVersion
 if (-not $OutputRoot) { $OutputRoot = Join-Path $repoRoot 'dist' }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
 $localRefs = Join-Path $repoRoot '.work\refs'

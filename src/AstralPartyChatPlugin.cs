@@ -19,7 +19,6 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
 {
     public const string PluginGuid = "astral-party.chat";
     public const string PluginName = "Astral Party Chat";
-    public const string PluginVersion = "0.0.1";
 
     private Harmony? _harmony;
     private PartyChatClient? _client;

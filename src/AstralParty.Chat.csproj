@@ -13,6 +13,9 @@
 
   <PropertyGroup>
     <RepositoryRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..'))</RepositoryRoot>
+    <AstralVersionFile>$(RepositoryRoot)\VERSION</AstralVersionFile>
+    <AstralPluginVersion Condition="Exists('$(AstralVersionFile)')">$([System.IO.File]::ReadAllText('$(AstralVersionFile)').Trim())</AstralPluginVersion>
+    <Version Condition="'$(Version)' == ''">$(AstralPluginVersion)</Version>
     <LocalRefsRoot>$([System.IO.Path]::Combine('$(RepositoryRoot)', '.work', 'refs'))</LocalRefsRoot>
     <AstralGameRoot Condition="'$(AstralGameRoot)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT</AstralGameRoot>
     <AstralBepInExRoot Condition="'$(AstralRefsRoot)' != ''">$(AstralRefsRoot)</AstralBepInExRoot>
@@ -70,4 +73,18 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+
+  <Target Name="GenerateAstralPluginVersion" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(AstralVersionFile)')" Text="Missing VERSION file." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(AstralPluginVersion)', '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'))" Text="VERSION must contain canonical X.Y.Z." />
+    <Error Condition="'$(Version)' != '$(AstralPluginVersion)'" Text="Build Version must match the VERSION file. Run scripts/prepare-release.ps1 first." />
+    <PropertyGroup>
+      <AstralGeneratedVersionFile>$(IntermediateOutputPath)AstralPluginVersion.g.cs</AstralGeneratedVersionFile>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(AstralGeneratedVersionFile)" Lines="namespace AstralParty.Chat { public sealed partial class AstralPartyChatPlugin { public const string PluginVersion = &quot;$(AstralPluginVersion)&quot;%3B } }" Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
+    <ItemGroup>
+      <Compile Include="$(AstralGeneratedVersionFile)" />
+      <FileWrites Include="$(AstralGeneratedVersionFile)" />
+    </ItemGroup>
+  </Target>
 </Project>

@@ -59,13 +59,17 @@ astral-party-chat-plugin/
 │  ├─ install.ps1
 │  ├─ distribution-installer.ps1
 │  ├─ check-public-files.ps1
+│  ├─ project-version.ps1
+│  ├─ prepare-release.ps1
 │  ├─ release-version.ps1
 │  └─ package-release.ps1
 ├─ tests/             # 게임·운영 서버 없이 실행하는 클라이언트·UI 회귀 검사
 │  └─ scripts/
 │     ├─ InstallTests.ps1
 │     ├─ DistributionInstallerTests.ps1
-│     └─ ReleaseVersionTests.ps1
+│     ├─ ReleaseVersionTests.ps1
+│     └─ ReleasePreparationTests.ps1
+├─ VERSION           # 빌드·패키징에 사용하는 단일 버전
 ├─ docs/install.txt   # 설치·제거·데이터 안내
 ├─ dist/              # 빌드 산출물, git 제외
 └─ .work/refs/        # 게임에서 복사한 빌드 참조 DLL, git 제외
@@ -186,20 +190,20 @@ HTTP 408/409/429/5xx 및 일시적 연결·저장소 오류는 재시도합니�
 
 ## GitHub Actions
 
-`Checks` 워크플로는 브랜치 push·PR 또는 수동 실행 시 공개 파일, 클라이언트·오버레이, 플러그인 설치, 배포용 CMD 설치기, 버전 검사를 실행합니다.
+`Checks` 워크플로는 브랜치 push·PR 또는 수동 실행 시 공개 파일, 클라이언트·오버레이, 플러그인 설치, 배포용 CMD 설치기, 버전·로컬 릴리즈 준비 검사를 실행합니다.
 
 ## 수동 로컬 패키징
 
-현재 버전은 `0.0.1`입니다. 버전의 기준은 `src/AstralPartyChatPlugin.cs`의 `PluginVersion` 한 곳이며, BepInEx 플러그인 정보·로그·HTTP User-Agent·DLL 제품/파일/어셈블리 버전이 이 값을 사용합니다. 제품·파일 버전은 `0.0.1`, 어셈블리 버전은 .NET의 네 자리 형식에 따라 `0.0.1.0`으로 표시됩니다.
+버전의 기준은 루트의 `VERSION` 파일이며, 초기 값은 `0.0.1`입니다. MSBuild가 이 파일에서 `PluginVersion` 상수를 `obj`에 자동 생성합니다. BepInEx 플러그인 정보·로그·HTTP User-Agent·DLL 제품/파일/어셈블리 버전이 모두 같은 값을 사용합니다. 제품·파일 버전은 `0.0.1`, 어셈블리 버전은 .NET의 네 자리 형식에 따라 `0.0.1.0`으로 표시됩니다. C# 소스에 버전 숫자를 직접 넣지 않습니다.
 
 게임 참조 DLL이 준비된 개발환경에서 빌드와 ZIP 패키징을 각각 실행합니다.
 
 ```powershell
 .\scripts\build.ps1
-.\scripts\package-release.ps1 -Tag v0.0.1
+.\scripts\package-release.ps1
 ```
 
-`release-version.ps1`은 빌드와 패키징의 버전 검증에 사용하는 헬퍼입니다. `build.ps1 -Version 0.0.1`처럼 버전을 명시할 수도 있지만 코드의 `PluginVersion`과 같아야 합니다. `-Version`이 코드 버전을 바꾸지는 않습니다. 패키징의 `-Tag`는 로컬 패키지의 버전과 ZIP 파일 이름을 지정하며 Git 태그를 생성하지 않습니다. DLL과 패키징 버전이 다르면 생성을 중단합니다.
+빌드와 패키징은 버전을 올리지 않습니다. `build.ps1 -Version 0.0.1`처럼 값을 명시할 수도 있지만 `VERSION`과 같아야 합니다. 직접 `dotnet build`를 실행해도 같은 파일에서 플러그인 버전을 생성하며 다른 `-p:Version` 값은 거부합니다. `package-release.ps1`은 기본적으로 `VERSION`에서 태그를 읽고, `-Tag v0.0.1`로 지정할 수도 있습니다. 이 옵션은 로컬 ZIP 파일 이름을 지정하며 Git 태그를 생성하지 않습니다. DLL과 패키징 버전이 다르면 생성을 중단합니다.
 
 패키지는 `dist/release/<태그>`에 생성됩니다. 버전마다 별도 폴더를 사용합니다.
 
@@ -214,14 +218,44 @@ dist/release/v0.0.1/
 
 ## 수동 Release와 버전 관리
 
-초기 개발의 `0.x` 단계에서는 버그 수정은 `0.0.1 → 0.0.2`, 기능 추가나 큰 변경은 `0.0.1 → 0.1.0`처럼 올리는 방식을 사용합니다. 안정적인 첫 정식 버전은 `1.0.0`으로 정하고, 이후 호환되지 않는 변경은 major, 기능 추가는 minor, 버그 수정은 patch를 올립니다. 이미 공개한 버전의 파일을 변경할 때는 새 버전을 사용합니다. [SemVer 규칙](https://semver.org/lang/ko/)
+여러 커밋을 모은 뒤 `prepare-release.ps1`을 실행할 때 버전을 한 번 올립니다. 마지막 릴리즈 태그 이후부터 현재 커밋까지 분석하며, 처음 배포할 때는 커밋 종류에 관계없이 `VERSION`의 초기 값 `0.0.1`을 사용합니다.
+
+| 커밋 종류 | 자동 처리 |
+| --- | --- |
+| `fix:`·`perf:`·`revert:` | patch 증가 |
+| `feat:` | minor 증가 |
+| 타입 뒤 `!` 또는 본문의 `BREAKING CHANGE:`·`BREAKING-CHANGE:` | `0.x`는 minor, `1.x` 이상은 major 증가 |
+| `docs:`·`chore:`·`ci:`·`test:` 등 | 버전 증가 없음 |
+
+예를 들어 `fix:` 커밋 세 개와 `feat:` 커밋 한 개가 있으면 `0.0.1 → 0.1.0`으로 한 번 증가합니다. 범위 내 가장 큰 변경을 적용합니다. 타입은 [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)를 따르며, `perf:`·`revert:`의 patch 처리와 `0.x`의 호환성 변경 처리는 이 저장소의 정책입니다. 설명은 한글로 작성할 수 있고 `feat(chat): 메시지 알림 추가` 같은 scope도 지원합니다. 병합 커밋 메시지는 제외하고 실제 브랜치 커밋을 분석하며 squash 커밋은 일반 커밋으로 분석합니다.
+
+배포 준비 전 소스 변경을 커밋하고 로컬 태그를 갱신합니다. GitHub에서 직접 만든 태그를 가져와야 이전 배포 범위를 알 수 있습니다. 준비 명령 자체는 로컬에서만 실행되므로 태그 갱신은 직접 실행합니다.
+
+```powershell
+git fetch origin --tags
+.\scripts\prepare-release.ps1 -Preview
+.\scripts\prepare-release.ps1
+```
+
+`-Preview`는 파일을 변경하지 않고 버전·태그·제목·분석한 커밋 수를 보여줍니다. 실제 실행은 `VERSION`을 갱신하고 `.work/releases/<태그>/release-notes.md`에 릴리즈 설명 초안을 만듭니다. 같은 배포를 다시 준비하거나 버전 변경을 커밋한 뒤 다시 실행해도 추가로 버전을 올리지 않습니다. 준비한 버전은 마지막 태그보다 높은 `VERSION` 값으로 구분합니다.
+
+준비 후 새로운 `feat:` 커밋이 추가되어 기존 patch 버전이 부족해지면 자동 진행을 중단합니다. `-Bump minor`로 새 변경에 맞게 다시 준비할 수 있습니다. 문서 수정만 배포하거나 커밋 타입이 없는 변경을 배포할 때도 증가 종류를 직접 지정할 수 있습니다.
+
+```powershell
+.\scripts\prepare-release.ps1 -Bump patch
+.\scripts\prepare-release.ps1 -Bump major        # 0.x에서 첫 정식 1.0.0으로 전환
+.\scripts\prepare-release.ps1 -Version 1.0.0     # 배포 버전 직접 지정
+```
+
+`VERSION` 이외에 미커밋 변경이 있거나 Git 기록이 불완전한 shallow clone이면 준비를 중단합니다. 마지막 릴리즈는 현재 소스의 Git 기록에 포함된 가장 높은 `vX.Y.Z` 태그이며, 해당 태그의 커밋에도 같은 `VERSION` 값이 있어야 합니다. 준비 중인 버전을 낮추거나 이미 있는 태그를 재사용하지 않습니다. 이미 공개한 파일을 바꾸려면 새 버전을 준비하세요. [SemVer 규칙](https://semver.org/lang/ko/)
 
 배포 순서:
 
-1. `PluginVersion`을 배포할 버전으로 변경합니다. 첫 배포는 현재 값인 `0.0.1`입니다.
-2. 회귀 검사와 실제 게임 확인을 수행하고 `chore: 플러그인 버전을 0.0.1로 설정`처럼 커밋한 뒤 push합니다.
-3. 커밋한 소스를 `build.ps1`로 빌드하고, 같은 버전으로 `package-release.ps1 -Tag v0.0.1`을 실행합니다.
-4. GitHub의 새 Release에서 태그를 `v0.0.1`, 대상은 해당 소스 커밋, 제목은 `ChatPlugin v0.0.1`로 선택합니다.
-5. `dist/release/v0.0.1/`의 파일을 직접 첨부하고 게시합니다. 일반 사용자는 ZIP 하나만 받으면 됩니다.
+1. 소스 변경을 커밋하고 `git fetch origin --tags`로 배포 태그를 가져옵니다.
+2. `prepare-release.ps1 -Preview`로 결과를 확인한 뒤 `prepare-release.ps1`로 버전을 준비합니다. 첫 배포는 `0.0.1`입니다.
+3. 회귀 검사와 실제 게임 확인을 수행하고, 변경된 `VERSION`을 `chore: 0.0.1 릴리즈 준비`처럼 커밋한 뒤 push합니다. 첫 배포처럼 값이 그대로라면 버전 커밋은 필요 없습니다.
+4. `prepare-release.ps1`을 다시 실행해 최종 커밋까지 설명 초안을 갱신하고, 깨끗한 소스에서 `build.ps1`, `package-release.ps1`을 실행합니다. 버전은 유지됩니다.
+5. GitHub의 새 Release에서 출력된 태그와 제목을 사용하고, 빌드한 소스 커밋을 대상으로 선택합니다. 예: `v0.0.1`, `ChatPlugin v0.0.1`.
+6. `.work/releases/v0.0.1/release-notes.md` 내용을 설명에 붙여넣고 `dist/release/v0.0.1/`의 파일을 직접 첨부해 게시합니다. 일반 사용자는 ZIP 하나만 받으면 됩니다.
 
-커밋 메시지의 `feat:`·`fix:`·`chore:` 타입은 변경 내역을 설명하는 용도입니다. 버전과 GitHub Release는 직접 정하며 커밋 메시지가 자동으로 버전을 올리지는 않습니다.
+준비 명령은 커밋·태그 생성·push·GitHub Release 게시를 수행하지 않습니다. Actions는 `Checks`만 실행하며 게임 플러그인의 배포용 빌드는 로컬 개발환경에서 수행합니다.

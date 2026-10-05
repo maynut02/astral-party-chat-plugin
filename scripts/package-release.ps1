@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)][string]$Tag,
+    [string]$Tag = '',
     [string]$OutputRoot = '',
     [string]$DllPath = '',
     [string]$InstallerScriptPath = ''
@@ -7,6 +7,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+. (Join-Path $PSScriptRoot 'project-version.ps1')
+if (-not $Tag) { $Tag = 'v' + (Get-AstralProjectVersion -Root $repoRoot) }
 $resolved = & (Join-Path $PSScriptRoot 'release-version.ps1') -InitialVersion '0.0.0' -ExplicitTag $Tag
 $version = $resolved.Version
 
@@ -18,7 +20,7 @@ $installerText = Get-AstralDistributionInstaller -InstallerScriptPath $Installer
 if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { throw 'Run scripts/build.ps1 before packaging.' }
 if ([Reflection.AssemblyName]::GetAssemblyName($dll).Name -cne 'AstralParty.Chat') { throw 'Unexpected plugin assembly.' }
 if ([Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion -cne $version) {
-    throw 'Package tag must match the built DLL version. Update PluginVersion and rebuild before packaging.'
+    throw 'Package tag must match the built DLL version. Prepare the VERSION file and rebuild before packaging.'
 }
 if (-not $OutputRoot) { $OutputRoot = Join-Path (Join-Path $repoRoot 'dist\release') $Tag }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
