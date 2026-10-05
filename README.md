@@ -9,13 +9,35 @@
 
 ## 설치
 
-Windows x64의 Steam판을 대상으로 합니다. 게임에 **BepInEx 6의 Unity IL2CPP Windows x64 버전**이 먼저 설치되어 있어야 합니다. 처음 설치한다면 [BepInEx 설치 안내](https://docs.bepinex.dev/master/articles/user_guide/installation/unity_il2cpp.html)를 따라 설치한 뒤 게임을 한 번 실행하고 종료하세요. 이 플러그인에는 BepInEx가 포함되어 있지 않습니다.
+Windows x64의 Steam판을 대상으로 합니다. 게임에 **BepInEx 6의 Unity IL2CPP Windows x64 버전**이 먼저 설치되어 있어야 합니다. 이 플러그인에는 BepInEx가 포함되어 있지 않습니다.
+
+### 1. BepInEx 설치와 게임용 설정
+
+1. 게임을 종료하고, Steam 라이브러리에서 아스트랄 파티를 우클릭해 **관리 → 로컬 파일 보기**를 선택합니다.
+2. 열린 폴더 안의 `8vJXnINT` 폴더로 들어갑니다. `AstralParty_INT.exe`가 있는 위치입니다.
+3. [BepInEx 설치 안내](https://docs.bepinex.dev/master/articles/user_guide/installation/unity_il2cpp.html)에 따라 **Unity IL2CPP Windows x64** 배포물의 압축 내용 전체를 이 위치에 복사합니다. 이 플러그인에서 확인한 버전은 `6.0.0-be.788`입니다.
+4. **게임을 처음 실행하기 전에** `BepInEx/config/BepInEx.cfg`를 메모장으로 열고 아래 설정을 적용합니다. 폴더나 파일이 없다면 직접 만드세요. 파일 이름은 `BepInEx.cfg`이며 `BepInEx.cfg.txt`로 저장되지 않도록 확인하세요.
+
+```ini
+[Logging]
+UnityLogListening = false
+
+[Logging.Console]
+Enabled = false
+
+[Logging.Disk]
+WriteUnityLog = false
+```
+
+기존 설정 파일이 있다면 해당 항목 세 개의 값만 바꾸고 다른 설정은 유지하세요. 같은 섹션과 항목을 중복으로 추가할 필요는 없습니다. 이 설정은 아스트랄 파티의 BepInEx 초기화 문제를 피하기 위한 것으로, 한글패치의 WindowsPlugin 배포물에도 포함되어 있습니다. 이미 해당 배포물로 설치했다면 위 값이 적용되어 있는지 확인하세요.
+
+설정을 저장한 뒤 Steam에서 게임을 한 번 실행하고 종료합니다. 최초 실행은 BepInEx의 참조 파일 생성 때문에 시간이 걸릴 수 있습니다.
+
+### 2. 채팅 플러그인 설치
 
 1. 게임을 종료합니다.
 2. [Releases](https://github.com/maynut02/astral-party-chat-plugin/releases)에서 `AstralPartyChatPlugin-v버전.zip`을 내려받아 압축을 풉니다.
-3. Steam 라이브러리에서 아스트랄 파티를 우클릭하고 **관리 → 로컬 파일 보기**를 선택합니다.
-4. 열린 폴더 안의 `8vJXnINT` 폴더로 들어갑니다. `AstralParty_INT.exe`와 기존 `BepInEx` 폴더가 있는 위치입니다.
-5. 압축에서 꺼낸 `BepInEx` 폴더를 이 위치에 복사하고, 기존 폴더와 합칩니다.
+3. 압축에서 꺼낸 `BepInEx` 폴더를 위의 `8vJXnINT` 위치에 복사하고, 기존 폴더와 합칩니다.
 
 설치 후 파일 위치가 다음과 같으면 됩니다.
 
@@ -24,6 +46,8 @@ Astral Party/
 └─ 8vJXnINT/
    ├─ AstralParty_INT.exe
    └─ BepInEx/
+      ├─ config/
+      │  └─ BepInEx.cfg
       └─ plugins/
          └─ AstralPartyChatPlugin/
             └─ AstralPartyChatPlugin.dll

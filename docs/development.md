@@ -6,7 +6,7 @@
 
 - Windows x64와 PowerShell, Git
 - Astral Party Steam판
-- 게임에 설치된 BepInEx 6 Unity IL2CPP Windows x64
+- [README의 설치 안내](../README.md#설치)에 따라 설치하고 `BepInEx/config/BepInEx.cfg`를 설정한 BepInEx 6 Unity IL2CPP Windows x64
 - 게임을 한 번 실행해 생성된 `BepInEx/interop` 참조 DLL
 
 프로젝트는 게임의 BepInEx 런타임에 맞춰 `net6.0`을 대상으로 빌드합니다. 참조 환경은 Unity 2022.3.62f3, BepInEx 6.0.0-be.788, .NET 런타임 6.0.7, Il2CppInterop.Runtime 1.5.3입니다. 다른 버전이나 게임 업데이트 이후의 호환성은 실제 게임에서 확인해야 합니다.

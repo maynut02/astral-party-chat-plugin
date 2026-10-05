@@ -118,8 +118,6 @@ $existingTags = (Invoke-ReleaseGit @('tag', '--list', $tag))
 if ($existingTags) { throw 'The target release tag already exists. Prepare a newer version.' }
 
 $notes = [Collections.Generic.List[string]]::new()
-$notes.Add("# $tag")
-$notes.Add('')
 $notes.Add('## 변경 사항')
 $notes.Add('')
 foreach ($commit in $commits) {
@@ -129,7 +127,10 @@ if ($commits.Count -eq 0) { $notes.Add('- 버전 및 배포 준비') }
 $notes.Add('')
 $notes.Add('## 설치')
 $notes.Add('')
-$notes.Add("게임을 종료하고 ``AstralPartyChatPlugin-$tag.zip``의 ``BepInEx`` 폴더를 게임 실행 파일이 있는 폴더에 복사하세요. BepInEx IL2CPP가 먼저 설치되어 있어야 합니다. 기존 채팅 DLL은 새 DLL로 교체하고 중복 사본을 제거하세요.")
+$notes.Add('- 게임을 종료하세요.')
+$notes.Add('- BepInEx 6 Unity IL2CPP Windows x64를 먼저 설치하고, [설치 안내](https://github.com/maynut02/astral-party-chat-plugin#설치)에 따라 `BepInEx/config/BepInEx.cfg`를 설정하세요.')
+$notes.Add("- ``AstralPartyChatPlugin-$tag.zip``의 ``BepInEx`` 폴더를 게임 실행 파일이 있는 폴더에 복사하세요.")
+$notes.Add('- 기존 채팅 DLL은 새 DLL로 교체하고 중복 사본을 제거하세요.')
 $notesPath = Join-Path $RepositoryRoot ".work/releases/$tag/release-notes.md"
 if (-not $Preview) {
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($notesPath)) | Out-Null
