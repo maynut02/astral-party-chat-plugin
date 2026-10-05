@@ -118,7 +118,7 @@ $existingTags = (Invoke-ReleaseGit @('tag', '--list', $tag))
 if ($existingTags) { throw 'The target release tag already exists. Prepare a newer version.' }
 
 $notes = [Collections.Generic.List[string]]::new()
-$notes.Add("# AstralPartyChatPlugin $tag")
+$notes.Add("# $tag")
 $notes.Add('')
 if (-not $previousTag) { $notes.Add('첫 릴리즈입니다.'); $notes.Add('') }
 $notes.Add('## 변경 사항')
@@ -142,7 +142,7 @@ if (-not $Preview) {
 [pscustomobject]@{
     Version = $target
     Tag = $tag
-    Title = "AstralPartyChatPlugin $tag"
+    Title = $tag
     PreviousTag = $previousTag
     DetectedBump = $detected
     CommitCount = $commits.Count

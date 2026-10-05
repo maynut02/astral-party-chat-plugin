@@ -60,7 +60,7 @@ Test-Case 'first-release-keeps-0.0.1-and-generates-korean-notes' {
     Add-TestCommit $root 'feat: 채팅 기능 추가'
     Add-TestCommit $root 'fix: 입력 처리 수정'
     $result = & $prepare -RepositoryRoot $root
-    Assert-True ($result.Version -ceq '0.0.1' -and $result.Tag -ceq 'v0.0.1' -and $result.Title -ceq 'AstralPartyChatPlugin v0.0.1') 'First release version changed.'
+    Assert-True ($result.Version -ceq '0.0.1' -and $result.Tag -ceq 'v0.0.1' -and $result.Title -ceq 'v0.0.1') 'First release version changed.'
     Assert-True ($result.CommitCount -eq 3 -and -not $result.VersionChanged) 'First release did not aggregate history.'
     $notes = [IO.File]::ReadAllText($result.NotesPath)
     Assert-True ($notes.Contains('채팅 기능 추가') -and $notes.Contains('입력 처리 수정') -and $notes.Contains('BepInEx')) 'Korean release notes were corrupted.'

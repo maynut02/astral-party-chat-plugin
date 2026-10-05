@@ -101,7 +101,7 @@ BepInEx/plugins/AstralPartyChatPlugin/AstralPartyChatPlugin.dll
 | 항목 | 첫 배포 예시 |
 | --- | --- |
 | 태그 | `v0.0.1` |
-| 제목 | `AstralPartyChatPlugin v0.0.1` |
+| 제목 | `v0.0.1` |
 | 설명 | `.work/releases/v0.0.1/release-notes.md`를 검토하고 붙여넣기 |
 | 첨부 파일 | `dist/release/v0.0.1/`의 ZIP·DLL·SHA256SUMS.txt |
 
