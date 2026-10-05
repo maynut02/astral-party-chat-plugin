@@ -60,11 +60,16 @@ BepInEx가 초기화된 게임과 Git이 있는 Windows 환경에서, 저장소 
 ```powershell
 .\scripts\setup.ps1
 .\scripts\test.ps1
-.\scripts\build.ps1
-.\scripts\package-release.ps1
 ```
 
-`setup.ps1`은 빌드용 참조 DLL과 로컬 .NET SDK를 준비합니다. 빌드 결과는 `dist/AstralPartyChatPlugin.dll`, 패키지는 `dist/release/v버전/`에 생성됩니다. 버전은 `VERSION` 파일을 기준으로 하며, 새 릴리즈 버전 준비와 GitHub 업로드 절차는 별도입니다.
+DLL만 만들려면 `build.ps1`, 릴리즈용 DLL·ZIP·체크섬을 함께 만들려면 `package-release.ps1`을 실행합니다. 둘 중 필요한 명령 하나만 실행하면 됩니다.
+
+```powershell
+.\scripts\build.ps1             # DLL 생성
+.\scripts\package-release.ps1   # 소스 빌드 후 릴리즈 파일 생성
+```
+
+`setup.ps1`은 빌드용 참조 DLL과 로컬 .NET SDK를 준비합니다. `package-release.ps1`은 최신 소스를 빌드한 뒤 패키징하므로 사전 빌드는 필요 없습니다. 빌드 결과는 `dist/AstralPartyChatPlugin.dll`, 패키지는 `dist/release/v버전/`에 생성됩니다. 버전은 `VERSION` 파일을 기준으로 하며, 새 릴리즈 버전 준비와 GitHub 업로드 절차는 별도입니다.
 
 - [개발 환경과 검증](docs/development.md)
 - [버전 관리와 수동 릴리즈](docs/releases.md)

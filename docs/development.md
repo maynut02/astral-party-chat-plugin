@@ -69,6 +69,28 @@ C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT
 
 `RefsRoot` 지정이나 기존 `.work/refs`가 게임 경로보다 우선합니다. 게임 업데이트 후에는 이전 로컬 참조를 갱신하세요.
 
+## 릴리즈 파일 생성
+
+```powershell
+.\scripts\package-release.ps1
+```
+
+최신 소스를 빌드해 `dist/AstralPartyChatPlugin.dll`을 갱신하고, `dist/release/v버전/`에 DLL·ZIP·체크섬을 생성합니다. `build.ps1`을 먼저 실행할 필요는 없습니다. 기존 DLL이 있어도 빌드를 다시 실행하며, 빌드가 실패하면 패키징을 중단합니다.
+
+`build.ps1`과 같은 `-GameRoot`, `-RefsRoot` 옵션을 사용할 수 있습니다.
+
+```powershell
+.\scripts\package-release.ps1 -RefsRoot 'D:\SteamLibrary\steamapps\common\Astral Party\8vJXnINT\BepInEx'
+```
+
+이미 만든 DLL을 다시 빌드하지 않고 패키징하려면 경로를 명시합니다.
+
+```powershell
+.\scripts\package-release.ps1 -DllPath '.\dist\AstralPartyChatPlugin.dll'
+```
+
+`-DllPath`는 `-GameRoot`, `-RefsRoot`와 함께 사용할 수 없습니다. 버전 검증과 수동 업로드 절차는 [릴리즈 문서](releases.md#3-로컬-빌드와-패키징)를 참고하세요.
+
 ## 검증
 
 전체 CI 검사를 로컬에서 실행하려면 PowerShell 7을 사용하세요. 릴리즈 준비·패키징 검사 스크립트는 PowerShell 7 이상을 요구합니다.
@@ -81,7 +103,7 @@ C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT
 .\tests\scripts\PackageReleaseTests.ps1
 ```
 
-위 명령은 CI의 `Checks`와 같은 검사입니다. `test.ps1`은 실제 클라이언트·UI·외부 응답 처리 코드를 가짜 HTTP/WebSocket과 Unity 객체로 검사하며, 운영 서버와 게임에는 접속하지 않습니다. 나머지 검사는 버전 형식과 증가, 커밋 기반 릴리즈 준비, ZIP에 DLL만 포함되는지, 체크섬, 버전 불일치 거부와 재패키징을 확인합니다. 배포 전에 CI가 성공했는지 확인하고 로컬에서 실제 플러그인을 빌드하세요.
+위 명령은 CI의 `Checks`와 같은 검사입니다. `test.ps1`은 실제 클라이언트·UI·외부 응답 처리 코드를 가짜 HTTP/WebSocket과 Unity 객체로 검사하며, 운영 서버와 게임에는 접속하지 않습니다. 나머지 검사는 버전 형식과 증가, 커밋 기반 릴리즈 준비, 패키징의 자동 빌드 호출과 실패 처리, 기존 DLL 사용, ZIP 내용과 체크섬, 버전 불일치 거부와 재패키징을 확인합니다. 패키징 검사에서 빌드 호출은 게임 참조가 필요 없는 테스트용 스크립트로 대체합니다. 배포 전에 CI가 성공했는지 확인하고 로컬에서 실제 플러그인을 빌드하세요.
 
 자동 검사만으로 게임 UI와 네이티브 입력 호환성을 보장할 수는 없습니다. 실제 게임에서는 다음을 확인합니다.
 

@@ -1,7 +1,14 @@
+[CmdletBinding(DefaultParameterSetName = 'Build')]
 param(
     [string]$Tag = '',
     [string]$OutputRoot = '',
-    [string]$DllPath = ''
+    [Parameter(Mandatory = $true, ParameterSetName = 'ExistingDll')]
+    [ValidateNotNullOrEmpty()]
+    [string]$DllPath,
+    [Parameter(ParameterSetName = 'Build')]
+    [string]$GameRoot = '',
+    [Parameter(ParameterSetName = 'Build')]
+    [string]$RefsRoot = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,12 +16,9 @@ $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $PSScriptRoot 'project-version.ps1')
 if (-not $Tag) { $Tag = 'v' + (Get-AstralProjectVersion -Root $repoRoot) }
 $version = ConvertTo-AstralVersion $Tag -Tag
-
-$dll = if ($DllPath) { [IO.Path]::GetFullPath($DllPath) } else { Join-Path $repoRoot 'dist\AstralPartyChatPlugin.dll' }
-if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { throw 'Run scripts/build.ps1 before packaging.' }
-if ([Reflection.AssemblyName]::GetAssemblyName($dll).Name -cne 'AstralPartyChatPlugin') { throw 'Unexpected plugin assembly.' }
-if ([Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion -cne $version) {
-    throw 'Package tag must match the built DLL version. Prepare the VERSION file and rebuild before packaging.'
+$buildPlugin = $PSCmdlet.ParameterSetName -eq 'Build'
+if ($buildPlugin -and $version -cne (Get-AstralProjectVersion -Root $repoRoot)) {
+    throw 'Package tag must match VERSION when building. Prepare the VERSION file before packaging.'
 }
 if (-not $OutputRoot) { $OutputRoot = Join-Path (Join-Path $repoRoot 'dist\release') $Tag }
 $OutputRoot = [IO.Path]::GetFullPath($OutputRoot)
@@ -26,6 +30,20 @@ if (Test-Path -LiteralPath $OutputRoot) {
             throw 'Release output directory contains an unexpected file. Use a separate empty directory.'
         }
     }
+}
+
+if ($buildPlugin) {
+    $buildArguments = @{}
+    if ($GameRoot) { $buildArguments.GameRoot = $GameRoot }
+    if ($RefsRoot) { $buildArguments.RefsRoot = $RefsRoot }
+    & (Join-Path $PSScriptRoot 'build.ps1') @buildArguments
+    $dll = Join-Path $repoRoot 'dist\AstralPartyChatPlugin.dll'
+}
+else { $dll = [IO.Path]::GetFullPath($DllPath) }
+if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) { throw "Missing plugin DLL: $dll" }
+if ([Reflection.AssemblyName]::GetAssemblyName($dll).Name -cne 'AstralPartyChatPlugin') { throw 'Unexpected plugin assembly.' }
+if ([Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion -cne $version) {
+    throw 'Package tag must match the built DLL version. Prepare the VERSION file and rebuild before packaging.'
 }
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 Copy-Item -LiteralPath $dll -Destination (Join-Path $OutputRoot 'AstralPartyChatPlugin.dll') -Force

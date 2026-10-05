@@ -71,11 +71,10 @@ git rev-parse HEAD
 ## 3. 로컬 빌드와 패키징
 
 ```powershell
-.\scripts\build.ps1
 .\scripts\package-release.ps1
 ```
 
-기본 태그는 `VERSION`에서 읽은 `vX.Y.Z`입니다. 예를 들어 다음 파일들이 생성됩니다.
+이 명령 하나로 최신 소스를 빌드한 뒤 릴리즈 파일을 생성합니다. `build.ps1`을 먼저 실행할 필요는 없습니다. 기존 DLL이 있어도 빌드를 다시 실행하며, 빌드가 실패하면 예전 DLL로 패키징하지 않고 중단합니다. 기본 태그는 `VERSION`에서 읽은 `vX.Y.Z`입니다. 예를 들어 다음 파일들이 생성됩니다.
 
 ```text
 dist/release/v0.0.1/
@@ -92,7 +91,13 @@ BepInEx/plugins/AstralPartyChatPlugin/AstralPartyChatPlugin.dll
 
 게임 참조 DLL, BepInEx 본체, SDK, PDB, 문서는 패키지에 넣지 않습니다. 별도 DLL은 수동 교체용이며 `SHA256SUMS.txt`는 ZIP과 DLL의 SHA-256을 기록합니다.
 
-`package-release.ps1 -Tag v0.0.1`로 태그를 명시할 수도 있습니다. `-OutputRoot`와 `-DllPath`는 다른 출력 폴더와 DLL 경로를 지정합니다. 이 옵션은 Git 태그를 만들지 않으며, 지정한 태그와 DLL 제품 버전이 다르면 패키징을 중단합니다. 기본값을 사용하는 경우에는 `VERSION`에서 읽은 태그와 DLL을 비교합니다.
+DLL만 필요할 때는 `build.ps1`을 실행합니다. 이미 만든 DLL을 그대로 패키징하려면 `-DllPath`를 지정합니다. 이 경우에는 빌드를 실행하지 않습니다.
+
+```powershell
+.\scripts\package-release.ps1 -DllPath '.\dist\AstralPartyChatPlugin.dll'
+```
+
+`-Tag v0.0.1`로 태그를, `-OutputRoot`로 출력 폴더를 지정할 수 있습니다. 자동 빌드 모드에서는 태그가 `VERSION`과 같아야 하며, `-GameRoot`·`-RefsRoot`를 빌드에 전달할 수 있습니다. `-DllPath` 모드에서는 지정한 DLL의 제품 버전과 태그가 같아야 합니다. 태그를 생략하면 두 모드 모두 `VERSION`에서 읽은 값을 사용합니다. 이 옵션은 Git 태그를 만들지 않습니다.
 
 ## 4. GitHub에 직접 게시
 
