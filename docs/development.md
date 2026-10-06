@@ -100,7 +100,7 @@ C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT
 .\scripts\upload-release.ps1
 ```
 
-`-Preview`는 GitHub 호출 없이 로컬 계획만 확인하며, `-Draft`는 업로드 후 draft로 유지합니다. 기본값과 기존 파일 비교·재시도·수동 업로드 대안은 [GitHub Release 업로드 절차](releases.md#4-github-release에-업로드)에 있습니다.
+`-Preview`는 파일 생성과 GitHub 호출 없이 로컬 계획과 `NotesContent`의 전체 본문을 확인하며, `-Draft`는 업로드 후 draft로 유지합니다. 본문은 명시한 설명 파일, 현재 태그의 준비된 파일, 로컬 Git 기록 순서로 선택합니다. 준비와 Git 기록 생성은 `scripts/release-notes.ps1`의 공통 파서·설치 템플릿을 사용합니다. Git 기록 생성에는 전체 이력이 필요합니다. 기본값과 기존 파일 비교·재시도·수동 업로드 대안은 [GitHub Release 업로드 절차](releases.md#4-github-release에-업로드)에 있습니다.
 
 ## 검증
 
@@ -117,7 +117,9 @@ C:\Program Files (x86)\Steam\steamapps\common\Astral Party\8vJXnINT
 
 위 명령은 CI의 `Checks`와 같은 검사입니다. `test.ps1`은 실제 클라이언트·UI·외부 응답 처리 코드를 가짜 HTTP/WebSocket과 Unity 객체로 검사하며, 운영 서버와 게임에는 접속하지 않습니다. 나머지 검사는 버전 형식과 증가, 커밋 기반 릴리즈 준비, 패키징의 자동 빌드 호출과 실패 처리, 기존 DLL 사용, ZIP 내용과 체크섬, 버전 불일치 거부와 재패키징을 확인합니다. 패키징 검사에서 빌드 호출은 게임 참조가 필요 없는 테스트용 스크립트로 대체합니다. 배포 전에 CI가 성공했는지 확인하고 로컬에서 실제 플러그인을 빌드하세요.
 
-`ReleaseUploadTests.ps1`은 GitHub에 실제 요청을 보내거나 릴리즈를 게시하지 않고 업로드 동작을 검사합니다. 로컬 계획, draft 생성 후 업로드·공개 순서, 동일 파일 건너뛰기, SHA-256 불일치 시 중단과 재시도를 확인합니다.
+`ReleasePreparationTests.ps1`은 기존 버전 결정 검사와 함께 실제 커밋 제목·7자리 SHA, 글로벌 Steam판 설치 템플릿, Windows PowerShell 5.1의 한글 본문을 확인합니다. 한글과 폴더 구조가 들어 있는 공통 helper는 UTF-8 BOM과 LF로 저장하고, 준비 스크립트의 BOM도 유지하세요.
+
+`ReleaseUploadTests.ps1`은 명령 조회가 fixture의 `gh.ps1`만 선택하는지 먼저 검사하며 GitHub에 실제 요청을 보내거나 릴리즈를 게시하지 않습니다. 로컬 계획, draft 생성 후 업로드·공개 순서, 동일 파일 건너뛰기, SHA-256 불일치 시 중단과 재시도를 확인합니다. 준비·Git 기록 생성의 본문 일치, 이전·현재·미병합 태그와 병합 커밋 제외, 파일 우선순위와 Preview 전체 본문, 새 본문의 스냅샷 전달과 기존 본문 유지도 검사합니다.
 
 자동 검사만으로 게임 UI와 네이티브 입력 호환성을 보장할 수는 없습니다. 실제 게임에서는 다음을 확인합니다.
 

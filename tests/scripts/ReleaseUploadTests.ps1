@@ -128,7 +128,7 @@ if ($arguments[0] -ceq 'release' -and $arguments[2] -ceq $state.TagName) {
             if ($state.Releases.Count) { Write-MockFailure 'Mock release already exists.'; return }
             $state.Releases = @(@{
                 tag_name = $arguments[2]; draft = ($arguments -ccontains '--draft')
-                target_commitish = (Get-MockOption '--target'); name = (Get-MockOption '--title'); assets = @()
+                target_commitish = (Get-MockOption '--target'); name = (Get-MockOption '--title'); assets = @(); body = $call.Notes
             })
             Save-MockState
             $global:LASTEXITCODE = 0
@@ -157,7 +157,7 @@ if ($arguments[0] -ceq 'release' -and $arguments[2] -ceq $state.TagName) {
         }
         'edit' {
             if ($state.Errors.Edit) { Write-MockFailure $state.Errors.Edit; return }
-            if (-not $state.Releases.Count -or -not ($arguments -ccontains '--draft=false')) {
+            if (-not $state.Releases.Count -or ($arguments -join '|') -cne "release|edit|$($state.TagName)|--repo|github.com/$($state.Repository)|--draft=false") {
                 Write-MockFailure 'Mock rejected release edit.'; return
             }
             $state.Releases[0].draft = $false
@@ -230,7 +230,7 @@ function New-Fixture {
     $stateRoot = Join-Path $root '.work/gh'
     $assets = Join-Path $root "dist/release/$tag"
     foreach ($path in @($scripts, $bin, $stateRoot, $assets)) { [IO.Directory]::CreateDirectory($path) | Out-Null }
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/upload-release.ps1'), (Join-Path $repoRoot 'scripts/project-version.ps1') -Destination $scripts
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/upload-release.ps1'), (Join-Path $repoRoot 'scripts/project-version.ps1'), (Join-Path $repoRoot 'scripts/release-notes.ps1'), (Join-Path $repoRoot 'scripts/prepare-release.ps1') -Destination $scripts
     [IO.File]::WriteAllText((Join-Path $scripts 'build.ps1'), "throw 'Upload must never invoke build.ps1.'", $utf8)
     [IO.File]::WriteAllText((Join-Path $root 'VERSION'), "0.0.1`n", $utf8)
     [IO.File]::WriteAllText((Join-Path $root 'source.txt'), "committed fixture source`n", $utf8)
@@ -263,6 +263,21 @@ function New-Fixture {
     }
     Assert-True ((Invoke-TestGit $root @('status', '--porcelain=v1', '--untracked-files=normal')) -eq '') 'Fixture must start clean.'
     return $fixture
+}
+function Add-FixtureCommit($Fixture, [string]$Message) {
+    [IO.File]::AppendAllText((Join-Path $Fixture.Root 'source.txt'), ([Guid]::NewGuid().ToString('N') + "`n"), $utf8)
+    Invoke-TestGit $Fixture.Root @('add', '.') | Out-Null
+    Invoke-TestGit $Fixture.Root @('commit', '-m', $Message) | Out-Null
+    $Fixture.Head = Invoke-TestGit $Fixture.Root @('rev-parse', '--verify', 'HEAD^{commit}')
+    $state = Get-State $Fixture
+    $state.Head = $Fixture.Head
+    $state.RemoteCommitSha = $Fixture.Head
+    Save-State $Fixture $state
+    return "- $(($Message -split "`n", 2)[0]) ($($Fixture.Head.Substring(0, 7)))"
+}
+function Assert-CommitNotes([string]$Notes, [string[]]$Expected) {
+    $changes = ($Notes -split '(?m)^## 설치', 2)[0].TrimEnd()
+    Assert-True ($changes -ceq ("## 변경 사항`n`n" + ($Expected -join "`n"))) 'Notes lost actual commit subjects, short SHAs, range or history order.'
 }
 function Invoke-FixtureUpload($Fixture, [hashtable]$Arguments = @{}) {
     $savedPath = $env:PATH
@@ -340,7 +355,7 @@ function Set-ExistingRelease($Fixture, [bool]$Draft = $true, [string[]]$Names = 
     $state = Get-State $Fixture
     $state.Releases = @(@{
         tag_name = $tag; draft = $Draft; target_commitish = $Fixture.Head
-        assets = @(foreach ($name in $Names) { New-RemoteAsset $Fixture $name })
+        assets = @(foreach ($name in $Names) { New-RemoteAsset $Fixture $name }); body = "기존 사용자 작성 본문 🎉`n"
     })
     if ($WithTag) { $state.Tag = @{ object = @{ type = 'commit'; sha = $Fixture.Head } } }
     Save-State $Fixture $state
@@ -361,7 +376,7 @@ function Test-Case([string]$CaseName, [scriptblock]$Body) {
     Write-Output "PASS release upload: $CaseName"
 }
 
-Test-Case 'fresh-release-is-draft-first-with-only-zip-checksum-and-generated-notes' {
+Test-Case 'fresh-release-is-draft-first-with-only-zip-checksum-and-git-notes-snapshot' {
     $f = New-Fixture
     $before = Get-AssetFingerprint $f
     Invoke-FixtureUpload $f | Out-Null
@@ -369,7 +384,10 @@ Test-Case 'fresh-release-is-draft-first-with-only-zip-checksum-and-generated-not
     $uploads = @(Get-ReleaseCalls $f 'upload')
     $edits = @(Get-ReleaseCalls $f 'edit')
     Assert-True ($creates.Count -eq 1 -and $uploads.Count -eq 1 -and $edits.Count -eq 1) 'Fresh upload must create, upload, then publish once.'
-    Assert-Sequence $creates[0].Arguments @('release', 'create', $tag, '--repo', 'github.com/owner/repo', '--target', $f.Head, '--title', $tag, '--draft', '--generate-notes') 'Fresh create tag/title/target/draft/notes arguments differ.'
+    $notesCopy = Get-CallOption $creates[0] '--notes-file'
+    Assert-Sequence $creates[0].Arguments @('release', 'create', $tag, '--repo', 'github.com/owner/repo', '--target', $f.Head, '--title', $tag, '--draft', '--notes-file', $notesCopy) 'Fresh create tag/title/target/draft/notes arguments differ.'
+    Assert-True ($notesCopy -and $notesCopy.StartsWith((Join-Path $f.Root '.work/upload-release'), [StringComparison]::OrdinalIgnoreCase)) 'Git notes did not come from the upload snapshot.'
+    Assert-CommitNotes $creates[0].Notes @("- Fixture source and release scripts ($($f.Head.Substring(0, 7)))")
     Assert-UploadFiles $f $uploads[0] $assetNames
     Assert-Sequence $edits[0].Arguments @('release', 'edit', $tag, '--repo', 'github.com/owner/repo', '--draft=false') 'Unexpected publish arguments.'
     $calls = @(Get-Calls $f)
@@ -405,6 +423,13 @@ foreach ($kind in @('prepared', 'explicit')) {
             [IO.File]::WriteAllText($original, $expected, $utf8)
             $arguments.NotesFile = $original
         }
+        $before = Get-FixtureFingerprint $f
+        $previewArguments = @{} + $arguments
+        $previewArguments.Preview = $true
+        $preview = Invoke-FixtureUpload $f $previewArguments
+        Assert-True ($preview.Notes -ieq $original -and $preview.NotesContent -ceq $expected) 'Preview lost notes file priority, path or full UTF-8 content.'
+        Assert-NoCalls $f
+        Assert-True ((Get-FixtureFingerprint $f) -ceq $before) 'Notes preview changed fixture files.'
         Invoke-FixtureUpload $f $arguments | Out-Null
         $create = @(Get-ReleaseCalls $f 'create')[0]
         $copy = Get-CallOption $create '--notes-file'
@@ -432,11 +457,96 @@ Test-Case 'preview-has-no-gh-calls-or-filesystem-writes' {
     $before = Get-FixtureFingerprint $f
     $result = Invoke-FixtureUpload $f @{ Preview = $true; Draft = $true }
     Assert-True ($result.Preview -and $result.Draft -and $result.Repository -ceq 'owner/repo' -and $result.Tag -ceq $tag -and $result.Title -ceq $tag) 'Preview returned wrong release identity.'
-    Assert-True ($result.SourceCommit -ceq $f.Head -and $result.AssetRoot -ieq $f.Assets -and $result.Notes -ceq 'GitHub generated notes') 'Preview returned wrong source/assets/notes.'
+    Assert-True ($result.SourceCommit -ceq $f.Head -and $result.AssetRoot -ieq $f.Assets -and $result.Notes -ceq 'Git commit history') 'Preview returned wrong source/assets/notes.'
+    Assert-CommitNotes $result.NotesContent @("- Fixture source and release scripts ($($f.Head.Substring(0, 7)))")
+    Assert-True ($result.NotesContent.Contains('/releases/download/v0.0.1/AstralPartyChatPlugin-v0.0.1.zip') -and -not $result.NotesContent.Contains('SHA256SUMS.txt')) 'Preview did not return the complete installation body.'
     Assert-Sequence $result.Assets $assetNames 'Preview exposed standalone DLL or other assets.'
     Assert-NoCalls $f
     Assert-True ((Get-FixtureFingerprint $f) -ceq $before) 'Preview wrote or changed fixture files.'
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $f.Root '.work/upload-release'))) 'Preview created a snapshot directory.'
+}
+
+Test-Case 'prepare-and-git-fallback-match-every-subject-and-upload-the-preview-body' {
+    $f = New-Fixture
+    $expected = @("- Fixture source and release scripts ($($f.Head.Substring(0, 7)))")
+    foreach ($message in @(
+        "Feat(chat): 한글 입력 개선 🎉`n`nfix: 본문은 별도 변경 항목이 아님",
+        'docs: 설치 정보 보강',
+        '일반 커밋: 릴리즈 준비 기록'
+    )) { $expected += Add-FixtureCommit $f $message }
+    $result = & (Join-Path $f.Root 'scripts/prepare-release.ps1') -RepositoryRoot $f.Root
+    $notes = [IO.File]::ReadAllText($result.NotesPath, $utf8)
+    Assert-CommitNotes $notes $expected
+    Assert-True (-not $notes.Contains('본문은 별도 변경 항목이 아님')) 'Preparation included commit bodies as subjects.'
+    # Remove only ignored fixture output to force the independent Git fallback.
+    Remove-Item -LiteralPath $result.NotesPath
+    $before = Get-FixtureFingerprint $f
+    $preview = Invoke-FixtureUpload $f @{ Preview = $true }
+    Assert-True ($preview.Notes -ceq 'Git commit history' -and $preview.NotesContent -ceq $notes) 'Preparation and fallback produced different complete Markdown.'
+    Assert-NoCalls $f
+    Assert-True ((Get-FixtureFingerprint $f) -ceq $before) 'Parity preview changed fixture files.'
+    Invoke-FixtureUpload $f | Out-Null
+    $create = @(Get-ReleaseCalls $f 'create')[0]
+    $copy = Get-CallOption $create '--notes-file'
+    Assert-True ($create.Notes -ceq $preview.NotesContent -and $copy.StartsWith((Join-Path $f.Root '.work/upload-release'), [StringComparison]::OrdinalIgnoreCase) -and -not ($create.Arguments -ccontains '--generate-notes')) 'Upload did not snapshot the complete preview body.'
+    Assert-SnapshotsCleaned $f
+}
+
+Test-Case 'fallback-selects-highest-lower-reachable-tag-and-excludes-current-tag-and-merges' {
+    $f = New-Fixture
+    [IO.File]::WriteAllText((Join-Path $f.Root 'VERSION'), "1.0.9`n", $utf8)
+    Add-FixtureCommit $f 'chore: 1.0.9 릴리즈 준비' | Out-Null
+    Invoke-TestGit $f.Root @('tag', 'v1.0.9') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $f.Root 'VERSION'), "1.0.10`n", $utf8)
+    Add-FixtureCommit $f 'feat: 이전 릴리즈에 포함된 변경' | Out-Null
+    Invoke-TestGit $f.Root @('tag', '-a', 'v1.0.10', '-m', 'Previous release') | Out-Null
+    Invoke-TestGit $f.Root @('checkout', '-b', 'unmerged', 'v1.0.9') | Out-Null
+    Add-FixtureCommit $f 'feat: 미병합 브랜치 변경' | Out-Null
+    Invoke-TestGit $f.Root @('tag', 'v1.0.19') | Out-Null
+    Invoke-TestGit $f.Root @('checkout', 'main') | Out-Null
+    $expected = @(Add-FixtureCommit $f 'docs: 새 설치 안내')
+    Invoke-TestGit $f.Root @('checkout', '-b', 'feature') | Out-Null
+    $expected += Add-FixtureCommit $f 'feat: 병합된 브랜치 기능'
+    Invoke-TestGit $f.Root @('checkout', 'main') | Out-Null
+    Invoke-TestGit $f.Root @('merge', '--no-ff', 'feature', '-m', 'feat!: 제외할 병합 제목') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $f.Root 'VERSION'), "1.0.20`n", $utf8)
+    $expected += Add-FixtureCommit $f 'fix: 이번 릴리즈 수정'
+    foreach ($ignored in @('v1.0.20', 'v01.0.19', 'v1.0.19-rc.1', 'v9.0.0')) {
+        Invoke-TestGit $f.Root @('tag', $ignored) | Out-Null
+    }
+    $assets = Join-Path $f.Root '.work/range-assets'
+    [IO.Directory]::CreateDirectory($assets) | Out-Null
+    $name = 'AstralPartyChatPlugin-v1.0.20.zip'
+    Copy-Item -LiteralPath (Join-Path $f.Assets $zipName) -Destination (Join-Path $assets $name)
+    $hash = (Get-FileHash -LiteralPath (Join-Path $assets $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText((Join-Path $assets 'SHA256SUMS.txt'), "$hash  $name`n", $utf8)
+    # Same-second commit dates can change Git's traversal around a merge. Check
+    # the intended set separately, then preserve Git's actual --reverse order.
+    $history = (Invoke-TestGit $f.Root @('-c', 'i18n.logOutputEncoding=utf-8', 'log', '--no-merges', '--reverse', '--abbrev=7', '--format=- %s (%h)', 'v1.0.10..HEAD', '--')) -split "`n"
+    Assert-Sequence @($history | Sort-Object) @($expected | Sort-Object) 'Fixture range did not contain exactly the new branch and source commits.'
+    $before = Get-FixtureFingerprint $f
+    $preview = Invoke-FixtureUpload $f @{ Preview = $true; AssetRoot = $assets }
+    Assert-CommitNotes $preview.NotesContent $history
+    Assert-True ($preview.Tag -ceq 'v1.0.20' -and $preview.SourceCommit -ceq $f.Head -and $preview.Notes -ceq 'Git commit history') 'Range preview lost its fixed HEAD/version.'
+    Assert-True ($preview.NotesContent.Contains('/releases/download/v1.0.20/AstralPartyChatPlugin-v1.0.20.zip')) 'Range notes used the wrong release ZIP link.'
+    Assert-NoCalls $f
+    Assert-True ((Get-FixtureFingerprint $f) -ceq $before) 'Range preview changed fixture files.'
+}
+
+Test-Case 'shallow-fallback-is-rejected-but-prepared-notes-preview-needs-no-history' {
+    $f = New-Fixture
+    [IO.File]::WriteAllText((Join-Path $f.Root '.git/shallow'), "$($f.Head)`n", $utf8)
+    Assert-Rejected $f 'full Git history' @{ Preview = $true }
+    Assert-NoCalls $f
+    $path = Join-Path $f.Root ".work/releases/$tag/release-notes.md"
+    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path)) | Out-Null
+    $notes = "## 준비된 본문`n파일 기반 릴리즈 🎉`n"
+    [IO.File]::WriteAllText($path, $notes, $utf8)
+    $before = Get-FixtureFingerprint $f
+    $preview = Invoke-FixtureUpload $f @{ Preview = $true }
+    Assert-True ($preview.Notes -ieq $path -and $preview.NotesContent -ceq $notes) 'Prepared notes did not take precedence over shallow history.'
+    Assert-NoCalls $f
+    Assert-True ((Get-FixtureFingerprint $f) -ceq $before) 'Shallow notes preview changed fixture files.'
 }
 
 foreach ($probe in @('Auth', 'Repository', 'Commit', 'Tag', 'Releases')) {
@@ -524,9 +634,11 @@ Test-Case 'published-release-with-missing-tag-is-rejected' {
 Test-Case 'existing-published-matching-assets-need-no-upload-or-edit' {
     $f = New-Fixture
     Set-ExistingRelease $f -Draft $false -Names $assetNames -WithTag
+    $body = (Get-State $f).Releases[0].body
     $before = Get-AssetFingerprint $f
     Invoke-FixtureUpload $f | Out-Null
     Assert-NoRemoteWrites $f
+    Assert-True ((Get-State $f).Releases[0].body -ceq $body) 'Rerun changed the existing release body.'
     Assert-True (@(Get-ReleaseCalls $f 'download').Count -eq 0) 'Matching digest unnecessarily downloaded an asset.'
     Assert-True ((Get-AssetFingerprint $f) -ceq $before) 'Idempotent upload changed local assets.'
     Assert-SnapshotsCleaned $f
@@ -545,12 +657,14 @@ foreach ($missing in $assetNames) {
         $f = New-Fixture
         $present = @($assetNames | Where-Object { $_ -cne $missing })
         Set-ExistingRelease $f -Names $present
+        $body = (Get-State $f).Releases[0].body
         Invoke-FixtureUpload $f | Out-Null
         Assert-True (@(Get-ReleaseCalls $f 'create').Count -eq 0) 'Draft on second API page was not recognized.'
         $uploads = @(Get-ReleaseCalls $f 'upload')
         Assert-True ($uploads.Count -eq 1) 'Missing asset was not uploaded once.'
         Assert-UploadFiles $f $uploads[0] @($missing)
         Assert-True (@(Get-ReleaseCalls $f 'edit').Count -eq 1 -and -not (Get-State $f).Releases[0].draft) 'Completed draft was not published.'
+        Assert-True ((Get-State $f).Releases[0].body -ceq $body) 'Draft completion changed the existing release body.'
         Assert-SnapshotsCleaned $f
     }
 }
@@ -685,6 +799,9 @@ foreach ($kind in @('extra-entry', 'wrong-installation-path')) {
 
 Test-Case 'missing-explicit-notes-is-rejected-before-gh' {
     $f = New-Fixture
+    $prepared = Join-Path $f.Root ".work/releases/$tag/release-notes.md"
+    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($prepared)) | Out-Null
+    [IO.File]::WriteAllText($prepared, "준비된 노트가 있어도 잘못 지정한 파일은 거부`n", $utf8)
     Assert-Rejected $f 'Missing release notes file' @{ NotesFile = (Join-Path $f.Root '.work/missing-notes.md') }
     Assert-NoCalls $f
 }

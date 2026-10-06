@@ -10,6 +10,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 if (-not $RepositoryRoot) { $RepositoryRoot = Join-Path $PSScriptRoot '..' }
 $RepositoryRoot = [IO.Path]::GetFullPath($RepositoryRoot)
 . (Join-Path $PSScriptRoot 'project-version.ps1')
+. (Join-Path $PSScriptRoot 'release-notes.ps1')
 $current = Get-AstralProjectVersion -Root $RepositoryRoot
 $git = Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1 -ExpandProperty Source
 
@@ -62,19 +63,7 @@ if ($eligible.Count -gt 0) {
 }
 $range = if ($previousTag) { "$previousTag..$sourceCommit" } else { $sourceCommit }
 $log = Invoke-ReleaseGit @('log', '--no-merges', '--reverse', '-z', '--format=%H%x00%B', $range, '--')
-$commits = @()
-if ($log) {
-    $fields = $log.Split([char]0)
-    for ($index = 0; $index + 1 -lt $fields.Length; $index += 2) {
-        $message = $fields[$index + 1].TrimEnd()
-        $subject = ($message -split "`n", 2)[0].TrimEnd("`r")
-        $match = [regex]::Match($subject, '\A(?<type>[a-z]+)(?:\([^()\r\n]+\))?(?<breaking>!)?: .+', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        $type = if ($match.Success) { $match.Groups['type'].Value.ToLowerInvariant() } else { '' }
-        $breaking = ($match.Success -and $match.Groups['breaking'].Success) -or
-            [regex]::IsMatch($message, '(?m)^BREAKING(?: CHANGE|-CHANGE):\s*\S')
-        $commits += [pscustomobject]@{ Sha = $fields[$index]; Subject = $subject; Type = $type; Breaking = $breaking }
-    }
-}
+$commits = @(ConvertFrom-AstralCommitLog -Log $log)
 
 $detected = 'none'
 foreach ($commit in $commits) {
@@ -117,24 +106,11 @@ $tag = "v$target"
 $existingTags = (Invoke-ReleaseGit @('tag', '--list', $tag))
 if ($existingTags) { throw 'The target release tag already exists. Prepare a newer version.' }
 
-$notes = [Collections.Generic.List[string]]::new()
-$notes.Add('## 변경 사항')
-$notes.Add('')
-foreach ($commit in $commits) {
-    $notes.Add("- $($commit.Subject) ($($commit.Sha.Substring(0, 7)))")
-}
-if ($commits.Count -eq 0) { $notes.Add('- 버전 및 배포 준비') }
-$notes.Add('')
-$notes.Add('## 설치')
-$notes.Add('')
-$notes.Add('- 게임을 종료하세요.')
-$notes.Add('- BepInEx 6 Unity IL2CPP Windows x64를 먼저 설치하고, [설치 안내](https://github.com/maynut02/astral-party-chat-plugin#설치)에 따라 `BepInEx/config/BepInEx.cfg`를 설정하세요.')
-$notes.Add("- ``AstralPartyChatPlugin-$tag.zip``의 ``BepInEx`` 폴더를 게임 실행 파일이 있는 폴더에 복사하세요.")
-$notes.Add('- 기존 채팅 DLL은 새 DLL로 교체하고 중복 사본을 제거하세요.')
+$notes = New-AstralReleaseNotes -Tag $tag -Commits $commits
 $notesPath = Join-Path $RepositoryRoot ".work/releases/$tag/release-notes.md"
 if (-not $Preview) {
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($notesPath)) | Out-Null
-    [IO.File]::WriteAllLines($notesPath, $notes.ToArray(), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($notesPath, $notes, [Text.UTF8Encoding]::new($false))
     if ($target -cne $current) {
         [IO.File]::WriteAllText((Join-Path $RepositoryRoot 'VERSION'), "$target`n", [Text.UTF8Encoding]::new($false))
     }

@@ -11,6 +11,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $PSScriptRoot 'project-version.ps1')
+. (Join-Path $PSScriptRoot 'release-notes.ps1')
 $version = Get-AstralProjectVersion -Root $repoRoot
 if (-not $Tag) { $Tag = "v$version" }
 if ((ConvertTo-AstralVersion $Tag -Tag) -cne $version) { throw 'Upload tag must match VERSION.' }
@@ -86,8 +87,27 @@ else {
     $preparedNotes = Join-Path $repoRoot ".work/releases/$Tag/release-notes.md"
     if (Test-Path -LiteralPath $preparedNotes -PathType Leaf) { $NotesFile = $preparedNotes }
 }
+if ($NotesFile) {
+    $notesContent = [IO.File]::ReadAllText($NotesFile, [Text.Encoding]::UTF8)
+}
+else {
+    if ((Invoke-UploadGit @('rev-parse', '--is-shallow-repository')) -eq 'true') {
+        throw 'Automatic release notes require full Git history. Fetch the complete history and release tags first.'
+    }
+    $tags = Invoke-UploadGit @('tag', '--merged', $sourceCommit, '--list', 'v*')
+    $previousTags = @($tags -split "`n" | ForEach-Object {
+        try {
+            $number = [Version](ConvertTo-AstralVersion $_ -Tag)
+            if ($number -lt [Version]$version) { [pscustomobject]@{ Tag = $_; Number = $number } }
+        } catch { } # Ignore unrelated or out-of-range tag names.
+    } | Sort-Object Number -Descending)
+    $range = if ($previousTags.Count) { "$($previousTags[0].Tag)..$sourceCommit" } else { $sourceCommit }
+    $log = Invoke-UploadGit @('-c', 'i18n.logOutputEncoding=utf-8', 'log', '--no-merges', '--reverse', '-z', '--format=%H%x00%B', $range, '--')
+    $commits = @(ConvertFrom-AstralCommitLog -Log $log)
+    $notesContent = New-AstralReleaseNotes -Tag $Tag -Commits $commits
+}
 if ($Preview) {
-    [pscustomobject]@{ Repository = $repository; Tag = $Tag; Title = $Tag; SourceCommit = $sourceCommit; Assets = $names; AssetRoot = $AssetRoot; Notes = if ($NotesFile) { $NotesFile } else { 'GitHub generated notes' }; Draft = [bool]$Draft; Preview = $true }
+    [pscustomobject]@{ Repository = $repository; Tag = $Tag; Title = $Tag; SourceCommit = $sourceCommit; Assets = $names; AssetRoot = $AssetRoot; Notes = if ($NotesFile) { $NotesFile } else { 'Git commit history' }; NotesContent = $notesContent; Draft = [bool]$Draft; Preview = $true }
     return
 }
 $ghCommand = Get-Command gh -CommandType Application, ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -141,12 +161,9 @@ try {
     if ((Invoke-UploadGit @('rev-parse', '--verify', 'HEAD^{commit}')) -cne $sourceCommit -or (Invoke-UploadGit @('status', '--porcelain=v1', '--untracked-files=normal'))) { throw 'Source changed during upload preparation.' }
     if (-not $release) {
         $arguments = @('release', 'create', $Tag, '--repo', $selector, '--target', $sourceCommit, '--title', $Tag, '--draft')
-        if ($NotesFile) {
-            $notesCopy = Join-Path $snapshotRoot 'release-notes.md'
-            Copy-Item -LiteralPath $NotesFile -Destination $notesCopy
-            $arguments += @('--notes-file', $notesCopy)
-        }
-        else { $arguments += '--generate-notes' }
+        $notesCopy = Join-Path $snapshotRoot 'release-notes.md'
+        [IO.File]::WriteAllText($notesCopy, $notesContent, [Text.UTF8Encoding]::new($false))
+        $arguments += @('--notes-file', $notesCopy)
         Invoke-UploadCommand $gh $arguments | Out-Null
     }
     if ($missing.Count) { Invoke-UploadCommand $gh (@('release', 'upload', $Tag, '--repo', $selector) + $missing) | Out-Null }

@@ -1,6 +1,6 @@
 # AstralPartyChatPlugin
 
-아스트랄 파티 Steam판에서 같은 방의 참가자와 채팅할 수 있는 BepInEx 플러그인입니다. 방 번호와 Steam 닉네임을 자동으로 읽어 채팅방에 연결합니다.
+아스트랄 파티 글로벌 Steam판에서 같은 방의 참가자와 채팅할 수 있는 BepInEx 플러그인입니다. 방 번호와 Steam 닉네임을 자동으로 읽어 채팅방에 연결합니다.
 
 - 방 대기, 캐릭터 선택, 플레이 화면에서 채팅
 - 한국어 입력과 Enter 전송, 입력 중 게임 키보드 조작 차단
@@ -9,7 +9,11 @@
 
 ## 설치
 
-Windows x64의 Steam판을 대상으로 합니다. 게임에 **BepInEx 6의 Unity IL2CPP Windows x64 버전**이 먼저 설치되어 있어야 합니다. 이 플러그인에는 BepInEx가 포함되어 있지 않습니다.
+Windows x64의 글로벌 Steam판만 설치를 지원합니다. 게임에 **BepInEx 6의 Unity IL2CPP Windows x64 버전**이 먼저 설치되어 있어야 합니다. 이 플러그인에는 BepInEx가 포함되어 있지 않습니다.
+
+| Steam판 | 설치 폴더 | 실행 파일 |
+| --- | --- | --- |
+| 글로벌판 | `8vJXnINT` | `AstralParty_INT.exe` |
 
 ### 1. BepInEx 설치와 게임용 설정
 
@@ -99,7 +103,7 @@ DLL만 만들려면 `build.ps1`, 릴리즈용 DLL·ZIP·체크섬을 함께 만�
 .\scripts\upload-release.ps1           # 기존 패키지 업로드 및 공개
 ```
 
-업로드 명령은 빌드하지 않으며 ZIP과 `SHA256SUMS.txt`만 첨부합니다. 별도 DLL은 로컬 산출물로 유지하고, 체크섬에는 ZIP 한 개만 기록합니다. `-Draft`를 지정하면 draft로 유지합니다. 옵션과 재시도 절차는 [릴리즈 문서](docs/releases.md#4-github-release에-업로드)에 있습니다.
+업로드 명령은 빌드하지 않으며 ZIP과 `SHA256SUMS.txt`만 첨부합니다. 별도 DLL은 로컬 산출물로 유지하고, 체크섬에는 ZIP 한 개만 기록합니다. `-Draft`를 지정하면 draft로 유지합니다. 릴리즈 본문은 명시한 `-NotesFile`, 준비된 설명 파일, 로컬 Git 커밋 기록 순서로 선택합니다. Git 기록으로 생성할 때도 설치·업데이트 안내를 포함하며 `-Preview`의 `NotesContent`로 전체 본문을 확인할 수 있습니다. 옵션과 재시도 절차는 [릴리즈 문서](docs/releases.md#4-github-release에-업로드)에 있습니다.
 
 - [개발 환경과 검증](docs/development.md)
 - [로컬 빌드와 릴리즈](docs/releases.md)

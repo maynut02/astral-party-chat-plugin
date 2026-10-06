@@ -64,6 +64,13 @@ Test-Case 'first-release-keeps-0.0.1-and-generates-korean-notes' {
     Assert-True ($result.CommitCount -eq 3 -and -not $result.VersionChanged) 'First release did not aggregate history.'
     $notes = [IO.File]::ReadAllText($result.NotesPath)
     Assert-True ($notes.Contains('채팅 기능 추가') -and $notes.Contains('입력 처리 수정') -and $notes.Contains('BepInEx')) 'Korean release notes were corrupted.'
+    $changes = ($notes -split '(?m)^## 설치', 2)[0].TrimEnd()
+    $commitLines = Invoke-TestGit $root @('-c', 'i18n.logOutputEncoding=utf-8', 'log', '--reverse', '--abbrev=7', '--format=- %s (%h)', 'HEAD', '--')
+    Assert-True ($changes -ceq "## 변경 사항`n`n$commitLines") 'Notes lost actual commit subjects, short SHAs or history order.'
+    Assert-True (-not $notes.Contains("`r") -and $notes.EndsWith("`n")) 'Generated notes must use LF Markdown.'
+    Assert-True ($notes.Contains('글로벌 Steam판만') -and $notes.Contains('| 글로벌판 | `8vJXnINT` | `AstralParty_INT.exe` |') -and -not $notes.Contains('AstralParty_CN.exe')) 'Notes must support only the global Steam installation.'
+    Assert-True ($notes -match '(?m)^1\. .+\n2\. .+\n3\. .+\n4\. .+' -and $notes.Contains('/releases/download/v0.0.1/AstralPartyChatPlugin-v0.0.1.zip')) 'Notes lack the installation steps or versioned ZIP link.'
+    Assert-True ($notes.Contains('└─ plugins/') -and $notes.Contains('AstralPartyChatPlugin.dll') -and $notes.Contains('AstralParty.Chat.dll') -and $notes.Contains('/commits/v0.0.1') -and $notes.Contains('/issues') -and -not $notes.Contains('SHA256SUMS.txt')) 'Notes lack the DLL tree, update advice or footer, or include checksum instructions.'
     Assert-True ((Invoke-TestGit $root @('tag', '--list')) -eq '') 'Preparation created a tag.'
     Assert-True ((Invoke-TestGit $root @('status', '--porcelain')) -eq '') 'Preparation changed source files.'
     $again = & $prepare -RepositoryRoot $root
@@ -235,6 +242,7 @@ Test-Case 'windows-powershell-5.1-preserves-korean-release-notes' {
     if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell preparation failed: $($output -join "`n")" }
     $notes = [IO.File]::ReadAllText((Join-Path $root '.work/releases/v0.0.1/release-notes.md'))
     Assert-True ($notes.Contains('## 변경 사항') -and $notes.Contains('한글 메시지 입력')) 'Windows PowerShell corrupted UTF-8 text.'
+    Assert-True ($notes.Contains('글로벌 Steam판만') -and $notes.Contains('└─ plugins/') -and $notes.Contains('### 기존 버전에서 업데이트')) 'Windows PowerShell corrupted the shared installation template.'
 }
 
 Test-Case 'real-project-generates-plugin-and-dll-versions-and-rejects-overrides' {

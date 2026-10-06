@@ -14,8 +14,13 @@
 | `src/ChatInputSubmitState.cs` | IME 조합 확정과 Enter 제출 상태 |
 | `src/RemotePayload.cs` | 외부 응답 크기와 PNG 크기 제한 |
 | `scripts/project-version.ps1` | 빌드·패키징·릴리즈 준비에 공통으로 쓰는 버전 처리 |
+| `scripts/release-notes.ps1` | 릴리즈 준비와 업로드의 공통 Git 커밋 파서 및 설치·업데이트 안내가 포함된 Markdown 템플릿 |
+| `scripts/prepare-release.ps1` | 커밋을 모아 버전을 한 번 결정하고 공통 템플릿으로 설명 파일 생성 |
+| `scripts/upload-release.ps1` | 명시한 설명 파일·준비 파일·로컬 Git 기록 순으로 본문 선택, 새 Release의 설명·첨부 파일 스냅샷 업로드 |
 
 같은 이름의 점으로 구분된 C# 파일들은 partial 타입의 기능을 나눈 것입니다. 런타임 상태 감지, 네트워크 세션, UI를 분리하고 `ChatGameState`와 UI 스냅샷으로 연결합니다.
+
+릴리즈 준비와 업로드의 Git 기록 생성은 같은 파서와 렌더러를 사용합니다. 업로드는 확정한 HEAD와 현재 버전보다 낮은 최고 도달 가능 태그로 범위를 결정하고, 본문을 메모리에 고정한 뒤 새 Release에만 스냅샷으로 전달합니다. 기존 Release의 본문은 유지합니다. 자세한 흐름은 [릴리즈 문서](releases.md)에 있습니다.
 
 ## 프레임과 수명 관리
 

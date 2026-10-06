@@ -35,7 +35,9 @@ git fetch origin --tags
 
 `-Preview`는 파일을 바꾸지 않고 버전·태그·제목·커밋 수를 보여줍니다. 실제 실행은 필요한 경우 `VERSION`을 갱신하고 `.work/releases/<태그>/release-notes.md`에 설명 초안을 만듭니다.
 
-설명 본문은 `## 변경 사항`부터 시작하며 커밋 목록과 `## 설치`를 포함합니다. 설치 안내는 문장별 `-` 목록으로 작성됩니다. 릴리즈 제목은 본문과 별도로 `vX.Y.Z`를 사용합니다.
+설명 본문은 `## 변경 사항`부터 시작하며 범위 안의 모든 커밋 제목과 7자리 SHA를 오래된 순서대로 나열합니다. 커밋 본문과 병합 커밋은 항목에 포함하지 않습니다. 릴리즈 제목은 본문과 별도로 `vX.Y.Z`를 사용합니다.
+
+`scripts/release-notes.ps1`의 공통 파서와 템플릿으로 설치 안내도 자동 생성합니다. 글로벌 Steam판의 설치 폴더·실행 파일 한 행, 게임 종료부터 BepInEx 사전 설치·README 설정 안내·ZIP 다운로드·폴더 합치기까지 1~4단계, DLL 한 개의 폴더 구조, 방 입장 후 채팅 버튼과 Enter 사용법을 포함합니다. 기존 `AstralParty.Chat.dll` 제거와 새 DLL 한 개 유지 안내 뒤에는 전체 변경 내역·설치 및 문제 해결·문제 제보 링크가 붙습니다.
 
 같은 배포를 다시 준비하거나 버전 변경을 커밋한 뒤 다시 실행해도 버전을 추가로 올리지 않습니다. 현재 `VERSION`이 마지막 태그보다 높으면 이미 준비한 버전으로 판단합니다. 준비 이후 더 큰 변경이 추가되어 버전이 부족해지면 자동 진행을 중단합니다.
 
@@ -120,9 +122,17 @@ gh auth login
 .\scripts\upload-release.ps1
 ```
 
-`-Preview`는 저장소·태그·소스 커밋·첨부 파일·설명 등 로컬 계획만 출력합니다. GitHub 호출이나 게시를 하지 않으므로 원격 Release와 첨부 파일의 상태도 조회하지 않습니다.
+`-Preview`는 저장소·태그·소스 커밋·첨부 파일·설명 등 로컬 계획만 출력합니다. `Notes`는 선택한 파일 경로 또는 `Git commit history`, `NotesContent`는 실제로 사용할 전체 본문입니다. 파일이나 스냅샷을 생성하지 않고 GitHub 호출도 하지 않으므로 원격 Release와 첨부 파일의 상태는 조회하지 않습니다.
 
-기본 태그와 제목은 `VERSION`에서 읽은 `vX.Y.Z`입니다. 첨부 파일은 `dist/release/<태그>/`의 `AstralPartyChatPlugin-<태그>.zip`과 `SHA256SUMS.txt` 두 개뿐입니다. 기본 설명 파일인 `.work/releases/<태그>/release-notes.md`가 있으면 그 내용을 사용하고, 없으면 GitHub의 `--generate-notes`로 설명을 생성합니다. 설명 파일이 있다면 게시 전에 검토하세요.
+기본 태그와 제목은 `VERSION`에서 읽은 `vX.Y.Z`입니다. 첨부 파일은 `dist/release/<태그>/`의 `AstralPartyChatPlugin-<태그>.zip`과 `SHA256SUMS.txt` 두 개뿐입니다. 설명은 명시한 `-NotesFile`을 먼저 사용하고, 생략하면 `.work/releases/<태그>/release-notes.md`를 사용합니다. 명시한 파일이 없으면 중단합니다. 두 파일 선택이 모두 없으면 로컬 Git 기록과 준비 명령의 공통 템플릿으로 본문을 생성합니다.
+
+Git 기록으로 생성할 때는 업로드 시작 시 확정한 HEAD에서 도달 가능한 정식 `vX.Y.Z` 태그 중 `VERSION`보다 낮은 최고 버전을 골라 그 태그 이후부터 확정 HEAD까지 읽습니다. 현재 버전의 태그는 제외하며, 이전 태그가 없으면 전체 기록을 사용합니다. 병합 커밋은 제외하고 모든 커밋 제목과 7자리 SHA를 오래된 순서로 표시합니다. 이 방식에는 전체 Git 기록과 릴리즈 태그가 필요합니다. shallow clone이라도 명시한 파일이나 현재 태그의 준비된 설명 파일을 사용하면 기록 생성은 필요하지 않습니다.
+
+본문을 읽거나 생성한 뒤 그 내용을 메모리에 고정합니다. 새 Release는 UTF-8 설명 스냅샷을 항상 `--notes-file`로 전달하며, GitHub의 `--generate-notes`를 사용하지 않습니다. 게시 전에 다음 명령으로 전체 본문을 검토할 수 있습니다.
+
+```powershell
+.\scripts\upload-release.ps1 -Preview | Select-Object -ExpandProperty NotesContent
+```
 
 새 Release는 draft로 생성하고 두 파일의 업로드가 모두 완료되면 공개합니다. `-Draft`를 지정하면 새 Release나 기존 draft를 공개하지 않습니다. 이미 공개된 Release에는 공개 상태를 유지하면서 파일만 추가합니다.
 
@@ -134,9 +144,9 @@ gh auth login
 | --- | --- |
 | `-Tag` | `VERSION`의 `vX.Y.Z`; 지정할 때도 `VERSION`과 같은 버전이어야 함 |
 | `-AssetRoot` | `dist/release/<태그>`; 업로드할 ZIP과 체크섬이 있는 폴더 |
-| `-NotesFile` | `.work/releases/<태그>/release-notes.md`; 릴리즈 설명 파일 |
+| `-NotesFile` | 명시한 파일을 우선 사용; 생략하면 현재 태그의 준비 파일, 없으면 Git 기록과 공통 템플릿으로 생성 |
 | `-Draft` | 새 Release와 기존 draft를 공개하지 않음 |
-| `-Preview` | GitHub 호출·게시 없이 로컬 계획만 출력 |
+| `-Preview` | 파일 생성·GitHub 호출·게시 없이 로컬 계획과 `NotesContent` 전체 본문 출력 |
 
 태그·파일 경로를 직접 지정하는 예시는 다음과 같습니다.
 
@@ -146,12 +156,12 @@ gh auth login
 
 ### 기존 Release와 재시도
 
-Release가 이미 있으면 누락된 첨부 파일만 추가합니다. 같은 이름의 파일이 있으면 원격 파일과 로컬 파일의 SHA-256을 비교하여 동일할 때 건너뛰고, 다르면 덮어쓰지 않고 중단합니다. 파일을 수정해 교체하려면 새 버전을 준비하세요.
+Release가 이미 있으면 본문은 유지하고 누락된 첨부 파일만 추가합니다. 새 `-NotesFile`을 지정하거나 Git 기록으로 본문을 생성해도 기존 Release의 본문을 덮어쓰지 않습니다. 같은 이름의 파일이 있으면 원격 파일과 로컬 파일의 SHA-256을 비교하여 동일할 때 건너뛰고, 다르면 덮어쓰지 않고 중단합니다. 파일을 수정해 교체하려면 새 버전을 준비하세요.
 
 업로드가 중간에 실패하면 같은 HEAD와 로컬 파일을 유지한 채 같은 명령을 다시 실행할 수 있습니다. 이미 올라간 동일 파일은 건너뛰고 나머지만 업로드하며, draft는 두 파일이 준비된 뒤 공개합니다. 계속 draft로 유지하려면 재시도에도 `-Draft`를 지정하세요. GitHub CLI의 옵션은 [Release 생성](https://cli.github.com/manual/gh_release_create)과 [첨부 파일 업로드](https://cli.github.com/manual/gh_release_upload) 공식 문서를 참고하세요.
 
 ### 수동 업로드 대안
 
-[새 Release 작성 화면](https://github.com/maynut02/astral-party-chat-plugin/releases/new)에서도 게시할 수 있습니다. 태그와 제목은 `vX.Y.Z`, 태그 대상은 먼저 push한 빌드 소스 커밋으로 지정하고, 준비한 설명을 붙여넣거나 자동 생성합니다. ZIP과 `SHA256SUMS.txt`만 첨부하고 두 파일을 확인한 뒤 공개하세요. 이미 만든 태그의 대상을 바꾸지 않습니다. 일반 사용자는 ZIP을 내려받아 [README의 설치 안내](../README.md#설치)를 따르면 됩니다.
+[새 Release 작성 화면](https://github.com/maynut02/astral-party-chat-plugin/releases/new)에서도 게시할 수 있습니다. 태그와 제목은 `vX.Y.Z`, 태그 대상은 먼저 push한 빌드 소스 커밋으로 지정하고, 준비한 설명 파일이나 업로드 Preview의 `NotesContent`를 붙여넣습니다. ZIP과 `SHA256SUMS.txt`만 첨부하고 두 파일을 확인한 뒤 공개하세요. 이미 만든 태그의 대상을 바꾸지 않습니다. 일반 사용자는 ZIP을 내려받아 [README의 설치 안내](../README.md#설치)를 따르면 됩니다.
 
 버전 준비·빌드·패키징 명령은 커밋, Git 태그 생성, push, GitHub Release 게시를 수행하지 않습니다. GitHub Release의 생성·업로드·공개는 `upload-release.ps1`이 담당합니다. 다음 릴리즈 준비 전에 `git fetch origin --tags`를 다시 실행하세요.
