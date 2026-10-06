@@ -20,6 +20,8 @@ internal static partial class ChatOverlay
     private static Vector2 _chatScrollDragStartLocal;
     private static float _chatDragStartNormalized;
     private static int _lastInputPollFrame = int.MinValue;
+    private static string? _validatedInputText;
+    private static bool _inputLengthExceeded;
     private static PointerEventData? _chatInputPointer;
     private static int _chatInputPointerStartFrame = int.MinValue;
     [ThreadStatic] private static int _chatInputReadDepth;
@@ -79,9 +81,13 @@ internal static partial class ChatOverlay
 
         // Validate only committed text. Keep the header free of a character
         // counter and never rewrite InputField text or IME composition.
-        var value = (_chatInputField?.text ?? string.Empty).Trim();
-        var length = PartyProtocol.TextLength(value);
-        var status = length > PartyProtocol.MaxTextLength
+        var value = _chatInputField?.text ?? string.Empty;
+        if (!string.Equals(value, _validatedInputText, StringComparison.Ordinal))
+        {
+            _inputLengthExceeded = PartyProtocol.TextLength(value.Trim()) > PartyProtocol.MaxTextLength;
+            _validatedInputText = value;
+        }
+        var status = _inputLengthExceeded
             ? "입력 길이 초과: 내용을 줄여주세요."
             : _chatStatus;
         if (_chatRoomText.text != status)
@@ -170,10 +176,7 @@ internal static partial class ChatOverlay
         }
 
         if (TryHandleChatScrollControls(pointer))
-        {
-            ConsumeOverlayPointer();
             return true;
-        }
 
         if (_chatHeaderRect != null
             && RectTransformUtility.RectangleContainsScreenPoint(
@@ -740,6 +743,8 @@ internal static partial class ChatOverlay
         OutgoingMessages.Clear();
         InputSubmitState.Reset();
         _lastInputPollFrame = int.MinValue;
+        _validatedInputText = null;
+        _inputLengthExceeded = false;
         _chatInputReadDepth = 0;
         _chatWindowOpen = false;
         _chatCloseHovered = false;

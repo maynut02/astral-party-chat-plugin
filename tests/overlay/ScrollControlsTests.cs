@@ -133,6 +133,7 @@ internal static class ScrollControlsTests
         Near(28f, controls.Thumb.rect.height, "minimum thumb size");
         ChatOverlay.BeginOtherChatDragsForTest();
         True(ChatOverlay.ClickScrollbarForTest(251f), "track click was handled");
+        Equal(1, Input.ResetInputAxesCallCount, "track click consumes input once");
         True(!ChatOverlay.HasOtherChatDragForTest(), "track cancels viewport and window drags");
         Near(0.5f, ChatOverlay.GetScrollPosition(), "track click centers thumb");
         True(ChatOverlay.IsChatScrollbarDragging, "track click captures drag");
@@ -209,8 +210,10 @@ internal static class ScrollControlsTests
         ChatOverlay.SetChatMessages(Enumerable.Range(0, 13).Select(Message));
         Equal(3, ChatOverlay.InspectScrollControls().UnreadCount, "accumulated unread");
         var createdBefore = GameObject.CreatedCount;
+        var consumedBefore = Input.ResetInputAxesCallCount;
         ChatOverlay.BeginOtherChatDragsForTest();
         True(ChatOverlay.ClickLatestForTest(), "latest click handled");
+        Equal(consumedBefore + 1, Input.ResetInputAxesCallCount, "latest click consumes input once");
         True(!ChatOverlay.HasOtherChatDragForTest(), "latest cancels viewport and window drags");
         Near(0f, ChatOverlay.GetScrollPosition(), "latest jumps to bottom");
         Equal(0, ChatOverlay.InspectScrollControls().UnreadCount, "latest resets count");

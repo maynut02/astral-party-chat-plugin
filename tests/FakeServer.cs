@@ -14,12 +14,13 @@ internal sealed class Fixture : IDisposable
     public Action<FakeSocket>? ConfigureSocket;
     public TimeSpan ConnectDelay;
     public readonly PartyChatClient Client;
-    public Fixture(TimeSpan? presenceTimeout = null, TimeSpan? messageTimeout = null, TimeSpan? joinTimeout = null)
+    public Fixture(TimeSpan? presenceTimeout = null, TimeSpan? messageTimeout = null, TimeSpan? joinTimeout = null,
+        TimeSpan? rateLimitRetryDelay = null)
     {
         Client = new PartyChatClient(new ManualLogSource(), new HttpClient(Handler), new PartyChatOptions
         {
             RetryDelay = TimeSpan.FromMilliseconds(30), MaxRetryDelay = TimeSpan.FromMilliseconds(60),
-            RateLimitRetryDelay = TimeSpan.FromMilliseconds(150),
+            RateLimitRetryDelay = rateLimitRetryDelay ?? TimeSpan.FromMilliseconds(150),
             PresenceRetryDelay = TimeSpan.FromMilliseconds(50),
             PresenceTimeout = presenceTimeout ?? TimeSpan.FromSeconds(2),
             MessageTimeout = messageTimeout ?? TimeSpan.FromSeconds(2),
@@ -79,6 +80,7 @@ internal sealed class FakeSocket : WebSocket
     public bool? JoinOrderPresent;
     public int ActiveSends;
     public int MaxConcurrentSends;
+    public int DisposeCount;
     public override WebSocketState State => _state;
     public override WebSocketCloseStatus? CloseStatus => null;
     public override string? CloseStatusDescription => null;
@@ -132,7 +134,7 @@ internal sealed class FakeSocket : WebSocket
         return new WebSocketReceiveResult(data.Length, WebSocketMessageType.Text, true);
     }
     public override void Abort() => _state = WebSocketState.Aborted;
-    public override void Dispose() => _state = WebSocketState.Closed;
+    public override void Dispose() { Interlocked.Increment(ref DisposeCount); _state = WebSocketState.Closed; }
     public override Task CloseAsync(WebSocketCloseStatus status, string? description, CancellationToken token)
     { _state = WebSocketState.Closed; return Task.CompletedTask; }
     public override Task CloseOutputAsync(WebSocketCloseStatus status, string? description, CancellationToken token) => CloseAsync(status, description, token);

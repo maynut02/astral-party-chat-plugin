@@ -32,16 +32,5 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
-      - name: Check publication candidates
-        run: ./scripts/check-public-files.ps1
-      - name: Client and overlay regression checks
-        run: ./scripts/test.ps1
-      - name: Project version regression checks
-        run: ./tests/scripts/ProjectVersionTests.ps1
-      - name: Local release preparation regression checks
-        run: ./tests/scripts/ReleasePreparationTests.ps1
-      - name: Release package regression checks
-        run: ./tests/scripts/PackageReleaseTests.ps1
-      - name: Release upload regression checks
-        run: ./tests/scripts/ReleaseUploadTests.ps1
-
+      - name: Run repository checks
+        run: ./scripts/check.ps1

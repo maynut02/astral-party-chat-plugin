@@ -20,6 +20,7 @@ internal sealed partial class PartyChatClient
             while (!session.Token.IsCancellationRequested)
             {
                 PartyConnection? connection = null;
+                var delay = TimeSpan.Zero;
                 try
                 {
                     await EnsureCharacterNamesAsync(session).ConfigureAwait(false);
@@ -100,15 +101,17 @@ internal sealed partial class PartyChatClient
                     _log.LogWarning("Chat connection retry: " + ex.GetType().Name + ": " + ex.Message);
                     var seconds = Math.Min(_options.RetryDelay.TotalSeconds * Math.Pow(2, Math.Min(attempt++, 4)),
                         _options.MaxRetryDelay.TotalSeconds);
-                    var delay = TimeSpan.FromSeconds(seconds);
+                    delay = TimeSpan.FromSeconds(seconds);
                     if (ex is RetryPartyException retry && retry.Delay is { } minimum && minimum > delay) delay = minimum;
-                    await Task.Delay(delay, session.Token).ConfigureAwait(false);
                 }
                 finally
                 {
                     lock (_gate) { if (ReferenceEquals(_connection, connection)) _connection = null; }
                     connection?.Dispose();
                 }
+                // Release the failed socket and linked token source before a
+                // potentially long server-directed cooldown.
+                await Task.Delay(delay, session.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (session.Token.IsCancellationRequested) { }

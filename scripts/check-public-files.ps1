@@ -1,3 +1,4 @@
+#requires -Version 7.0
 param()
 
 $ErrorActionPreference = 'Stop'
@@ -19,13 +20,13 @@ foreach ($file in $files) {
     if (($leaf -match '^\.(env|dev\.vars)(\.|$)' -and $leaf -ne '.env.example') -or
         $file -match '(?i)\.(dll|exe|pdb|zip|7z|pfx|p12|pem|key|log)$' -or
         $file -match '(^|/)(\.work|dist|bin|obj|BepInEx)/' -or
-        $file -match '^\.agents/docs/') {
+        $file -match '^\.agents/') {
         $findings.Add("$file : private/build file is a publication candidate")
         continue
     }
     $path = Join-Path $repoRoot $file
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
-    if ($file -notmatch '(?i)\.(cs|csproj|ps1|md|json|ya?ml|txt|config|props|targets)$' -and $leaf -notin @('.gitignore', '.env.example')) { continue }
+    if ($file -notmatch '(?i)\.(cs|csproj|ps1|py|md|json|ya?ml|txt|config|props|targets)$' -and $leaf -notin @('.editorconfig', '.gitattributes', '.gitignore', '.env.example')) { continue }
     $lines = [IO.File]::ReadAllLines($path)
     for ($index = 0; $index -lt $lines.Length; $index++) {
         foreach ($pattern in $secretPatterns) {
@@ -41,4 +42,4 @@ if ($findings.Count -gt 0) {
     $findings | ForEach-Object { Write-Output $_ }
     throw 'Public file check failed. Remove private files or rotate exposed credentials before publication.'
 }
-Write-Output "Public file check passed ($($files.Count) candidate files). This is a limited pattern check, not a complete secret audit."
+Write-Output "Public file check passed ($($files.Count) candidate files)."

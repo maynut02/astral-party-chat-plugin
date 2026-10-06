@@ -1,12 +1,16 @@
-param()
+#requires -Version 7.0
+param([string]$WorkRoot = '', [string]$DotNetPath = '')
 
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$localDotnet = Join-Path $repoRoot '.work\dotnet\dotnet.exe'
-$dotnet = if (Test-Path -LiteralPath $localDotnet) { $localDotnet } else { Get-Command dotnet -CommandType Application -ErrorAction Stop | Select-Object -First 1 -ExpandProperty Source }
-& $dotnet run --project (Join-Path $repoRoot 'tests\AstralPartyChatPlugin.Tests.csproj') --configuration Release
-if ($LASTEXITCODE -ne 0) { throw 'AstralPartyChatPlugin regression checks failed.' }
-& $dotnet run --project (Join-Path $repoRoot 'tests\overlay\OverlayTests.csproj') --configuration Release
-if ($LASTEXITCODE -ne 0) { throw 'AstralPartyChatPlugin overlay regression checks failed.' }
-& $dotnet run --project (Join-Path $repoRoot 'tests\security\PayloadTests.csproj') --configuration Release
-if ($LASTEXITCODE -ne 0) { throw 'AstralPartyChatPlugin remote payload checks failed.' }
+if (-not $WorkRoot) { $WorkRoot = Join-Path $repoRoot '.work' }
+. (Join-Path $PSScriptRoot 'dotnet-sdk.ps1')
+$dotnet = Get-AstralDotnet -Root $repoRoot -WorkRoot $WorkRoot -DotNetPath $DotNetPath
+Push-Location -LiteralPath $repoRoot
+try {
+    foreach ($project in @('tests/AstralPartyChatPlugin.Tests.csproj', 'tests/overlay/OverlayTests.csproj', 'tests/security/PayloadTests.csproj')) {
+        & $dotnet run --project (Join-Path $repoRoot $project) --configuration Release
+        if ($LASTEXITCODE -ne 0) { throw "Runtime regression checks failed: $project" }
+    }
+} finally { Pop-Location }

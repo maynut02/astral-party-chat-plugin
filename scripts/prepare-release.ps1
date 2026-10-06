@@ -8,7 +8,7 @@
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 if (-not $RepositoryRoot) { $RepositoryRoot = Join-Path $PSScriptRoot '..' }
-$RepositoryRoot = [IO.Path]::GetFullPath($RepositoryRoot)
+$RepositoryRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RepositoryRoot)
 . (Join-Path $PSScriptRoot 'project-version.ps1')
 . (Join-Path $PSScriptRoot 'release-notes.ps1')
 $current = Get-AstralProjectVersion -Root $RepositoryRoot

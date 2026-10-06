@@ -143,11 +143,12 @@ internal sealed partial class PartyChatClient
     {
         var older = ParseRoomMessagesLocked(history);
         var confirmed = new HashSet<string>(older.Select(message => message.ClientMessageId).Where(id => id.Length > 0), StringComparer.Ordinal);
-        _messages.RemoveAll(message => message.Id.StartsWith("local:", StringComparison.Ordinal) && confirmed.Contains(message.ClientMessageId));
+        var removed = _messages.RemoveAll(message => message.Id.StartsWith("local:", StringComparison.Ordinal)
+            && confirmed.Contains(message.ClientMessageId));
         foreach (var id in confirmed) _pendingMessages.Remove(id);
         var known = new HashSet<string>(_messages.Select(message => message.Id), StringComparer.Ordinal);
         var unique = older.Where(message => known.Add(message.Id)).ToList();
-        if (unique.Count == 0) return;
+        if (unique.Count == 0 && removed == 0) return;
         _messages.InsertRange(0, unique);
         TrimMessagesLocked();
         _revision++;

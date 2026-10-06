@@ -1,0 +1,31 @@
+<Project>
+  <PropertyGroup Condition="'$(AstralPluginProject)' == 'true'">
+    <AstralVersionFile>$(AstralRepositoryRoot)VERSION</AstralVersionFile>
+    <AstralPluginVersion Condition="Exists('$(AstralVersionFile)')">$([System.IO.File]::ReadAllText('$(AstralVersionFile)').Trim())</AstralPluginVersion>
+    <Version>$(AstralPluginVersion)</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Optimize>true</Optimize>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <Target Name="ValidateAstralPluginVersion" BeforeTargets="PrepareForBuild;GetAssemblyVersion;CoreCompile" Condition="'$(AstralPluginProject)' == 'true'">
+    <Error Condition="!Exists('$(AstralVersionFile)')" Text="Missing VERSION file." />
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(AstralPluginVersion)', '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'))" Text="VERSION must contain canonical X.Y.Z." />
+    <Error Condition="$([System.Version]::Parse('$(AstralPluginVersion)').Major) &gt; 65534 or $([System.Version]::Parse('$(AstralPluginVersion)').Minor) &gt; 65534 or $([System.Version]::Parse('$(AstralPluginVersion)').Build) &gt; 65534" Text="Version components must be between 0 and 65534 for .NET assembly metadata." />
+    <Error Condition="'$(Version)' != '$(AstralPluginVersion)'" Text="Build Version must match the VERSION file. Run scripts/prepare-release.ps1 first." />
+  </Target>
+
+  <Target Name="GenerateAstralPluginVersion" BeforeTargets="CoreCompile" DependsOnTargets="ValidateAstralPluginVersion" Condition="'$(AstralPluginProject)' == 'true'">
+    <PropertyGroup>
+      <AstralGeneratedVersionFile>$(IntermediateOutputPath)AstralBuildVersion.g.cs</AstralGeneratedVersionFile>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(AstralGeneratedVersionFile)" Lines="internal static class AstralBuildVersion { public const string Value = &quot;$(AstralPluginVersion)&quot;%3B }" Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
+    <ItemGroup>
+      <Compile Include="$(AstralGeneratedVersionFile)" />
+      <FileWrites Include="$(AstralGeneratedVersionFile)" />
+    </ItemGroup>
+  </Target>
+</Project>

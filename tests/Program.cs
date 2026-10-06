@@ -310,6 +310,26 @@ var tests = new List<(string Name, Func<Task> Run)>
         await Task.Delay(40);
         Check.True(f.Client.GetUiSnapshot().Messages.Count == 1, "Repeated echo duplicated a message.");
     }),
+    ("Duplicate history acknowledgement publishes removal of an optimistic message", async () =>
+    {
+        using var f = new Fixture(); f.Start(); await f.Joined();
+        var socket = f.Latest; socket.AutoChat = false;
+        socket.Feed(new { type = "CHAT", message = new { id = "known-history", text = "confirmed", participant = socket.Self() } });
+        await Check.Eventually(() => f.Client.GetUiSnapshot().Messages.Count == 1);
+        f.Client.SendChat("confirmed"); await Check.Eventually(() => socket.Count("CHAT") == 1);
+        var before = f.Client.GetUiSnapshot();
+        var id = socket.Sent.Last(payload => payload.GetProperty("type").GetString() == "CHAT")
+            .GetProperty("clientMessageId").GetString();
+        socket.Feed(new { type = "HISTORY", messages = new[]
+        {
+            new { kind = "chat", id = "known-history", clientMessageId = id, text = "confirmed", participant = socket.Self() }
+        } });
+        await Check.Eventually(() => f.Client.GetUiSnapshot().Messages.Count == 1);
+        var after = f.Client.GetUiSnapshot();
+        Check.True(after.Revision > before.Revision && after.Messages[0].Id == "known-history",
+            "History acknowledgement left the cached optimistic row visible.");
+        Check.True(before.Messages.Count == 2 && socket.Count("CHAT") == 1, "Acknowledgement changed an old snapshot or resent chat.");
+    }),
     ("Unacknowledged chat preserves text and marks uncertainty", async () =>
     {
         using var f = new Fixture(messageTimeout: TimeSpan.FromMilliseconds(80), joinTimeout: TimeSpan.FromMilliseconds(100));
@@ -340,6 +360,19 @@ var tests = new List<(string Name, Func<Task> Run)>
         var first = f.Client.GetUiSnapshot(); var second = f.Client.GetUiSnapshot();
         Check.True(first.Messages.Count == 300 && first.Messages[0].Id == "50", "History limit failed.");
         Check.True(ReferenceEquals(first.Messages, second.Messages), "Unchanged snapshots reallocated history.");
+    }),
+    ("Unchanged snapshots are reused while status-only updates remain visible", () =>
+    {
+        using var f = new Fixture();
+        var before = f.Client.GetUiSnapshot();
+        for (var i = 0; i < 1000; i++)
+            Check.True(ReferenceEquals(before, f.Client.GetUiSnapshot()), "Unchanged frame allocated a new UI snapshot.");
+        f.Client.SendChat("offline");
+        var after = f.Client.GetUiSnapshot();
+        Check.True(after.Revision == before.Revision && after.Status != before.Status
+            && ReferenceEquals(before.Messages, after.Messages), "Status-only update was hidden or copied history.");
+        Check.True(ReferenceEquals(after, f.Client.GetUiSnapshot()), "Status-only snapshot was not cached.");
+        return Task.CompletedTask;
     }),
     ("Protocol validates ASCII room ids and counts Unicode code points", async () =>
     {
@@ -474,11 +507,61 @@ var tests = new List<(string Name, Func<Task> Run)>
         Check.True(input.TryTakeReady(2, false, out var taken) && taken == first && !input.TryTakeReady(2, false, out _), "Duplicate Enter submitted twice.");
         return Task.CompletedTask;
     }),
-    ("Dispose aborts sockets and prevents new sessions", async () =>
+    ("Rate-limited JOIN releases its socket before cooldown and cancels retry on exit", async () =>
+    {
+        using var f = new Fixture(rateLimitRetryDelay: TimeSpan.FromSeconds(10));
+        f.ConfigureSocket = socket =>
+        {
+            socket.AutoJoin = false;
+            socket.OnSend = payload =>
+            {
+                if (payload.GetProperty("type").GetString() == "JOIN")
+                    socket.Feed(new { type = "ERROR", code = "JOIN_RATE_LIMITED", message = "cooldown" });
+                return Task.CompletedTask;
+            };
+        };
+        f.Start(); await Check.Eventually(() => f.Client.GetUiSnapshot().Status.Contains("cooldown"));
+        var socket = f.Latest;
+        await Check.Eventually(() => socket.DisposeCount == 1, 1000);
+        Check.True(f.Sockets.Count == 1, "JOIN rate limit skipped its cooldown.");
+        f.Client.UpdateGameState(new ChatGameState());
+        await Task.Delay(80);
+        Check.True(f.Sockets.Count == 1 && socket.DisposeCount == 1, "Leaving during cooldown retried or disposed twice.");
+    }),
+    ("Leaving during a pending handshake cancels and releases the socket", async () =>
+    {
+        using var f = new Fixture(); f.ConnectDelay = TimeSpan.FromSeconds(10);
+        f.Start(); await Check.Eventually(() => f.Sockets.Count == 1);
+        var socket = f.Latest;
+        f.Client.UpdateGameState(new ChatGameState());
+        await Check.Eventually(() => socket.DisposeCount == 1);
+        await Task.Delay(80);
+        Check.True(f.Sockets.Count == 1 && socket.Count("JOIN") == 0, "Canceled handshake joined or retried.");
+    }),
+    ("Dispose cancels an in-flight HTTP request without retrying", async () =>
+    {
+        using var f = new Fixture();
+        var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        f.Handler.Respond = async (_, token) =>
+        {
+            try { await Task.Delay(Timeout.Infinite, token); return FakeHttp.Response(HttpStatusCode.OK); }
+            finally { released.TrySetResult(); }
+        };
+        f.Start(); await Check.Eventually(() => f.Handler.RoomRequests == 1);
+        f.Dispose(); await released.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await Task.Delay(80);
+        Check.True(f.Handler.RoomRequests == 1 && f.Sockets.Count == 0, "Disposed HTTP session retried or opened a socket.");
+    }),
+    ("Dispose aborts sockets and prevents new sessions or status mutations", async () =>
     {
         var f = new Fixture(); f.Start(); await f.Joined(); var socket = f.Latest;
-        f.Dispose(); f.Start("222222"); await Task.Delay(60);
+        f.Dispose(); var stopped = f.Client.GetUiSnapshot();
+        f.Start("222222"); f.Client.UpdateGameState(new ChatGameState()); f.Client.SendChat("late"); f.Dispose();
+        await Check.Eventually(() => socket.DisposeCount == 1);
+        var after = f.Client.GetUiSnapshot();
         Check.True(socket.State != System.Net.WebSockets.WebSocketState.Open && f.Handler.RoomRequests == 1, "Dispose left a live session.");
+        Check.True(after.Status == stopped.Status && after.Revision == stopped.Revision && after.Messages.Count == 0,
+            "Post-disposal input changed the terminal snapshot.");
     })
 };
 

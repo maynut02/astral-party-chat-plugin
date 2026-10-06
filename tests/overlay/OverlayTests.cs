@@ -26,6 +26,7 @@ internal static class OverlayTests
         Run("Enter and send button reject over-limit drafts without changing text", OverLimitDraftIsPreserved);
         Run("1000 code points send intact through Enter and the send button", CodePointBoundarySendsIntact);
         Run("draft feedback survives connection status updates and clears on correction", DraftFeedbackFollowsEditing);
+        Run("unchanged spaced Unicode drafts avoid repeated validation allocations", UnchangedDraftAvoidsValidationAllocations);
         Run("explicit IME send validates only the final committed draft", ImeSendValidatesCommittedDraft);
         Run("one IME Enter waits for committed text and sends once", ImeEnterSendsCommittedText);
         Run("wheel moves the same UI distance for short and long histories", WheelDistanceDoesNotDependOnHistory);
@@ -355,6 +356,23 @@ internal static class OverlayTests
         Equal("안녕😀", sent, "existing trimming on accepted send");
         ChatOverlay.SetChatStatus("연결됨");
         Equal("연결됨", ChatOverlay.GetStatusText(), "latest connection status after send");
+    }
+
+    private static void UnchangedDraftAvoidsValidationAllocations()
+    {
+        ChatOverlay.ResetHarness();
+        var draft = "  " + string.Concat(Enumerable.Repeat("😀", 1000)) + "  ";
+        ChatOverlay.SetDraft(draft);
+        for (var i = 0; i < 10; i++) ChatOverlay.RefreshInputStatusForTest();
+        var writesBefore = ChatOverlay.GetDraftWriteCount();
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 1000; i++) ChatOverlay.RefreshInputStatusForTest();
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+        True(allocated < 1024, $"unchanged draft validation allocated {allocated} bytes");
+        ChatOverlay.SetChatStatus("재연결 중");
+        Equal("재연결 중", ChatOverlay.GetStatusText(), "cached draft hid a connection status change");
+        Equal(draft, ChatOverlay.GetDraft(), "validation changed the draft");
+        Equal(writesBefore, ChatOverlay.GetDraftWriteCount(), "validation rewrote the draft");
     }
 
     private static void ImeSendValidatesCommittedDraft()

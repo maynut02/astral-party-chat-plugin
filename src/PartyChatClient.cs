@@ -39,6 +39,7 @@ internal sealed partial class PartyChatClient : IDisposable
     private int _revision;
     private int _snapshotRevision = -1;
     private IReadOnlyList<ChatUiMessage> _snapshotMessages = Array.Empty<ChatUiMessage>();
+    private PartyUiSnapshot? _snapshot;
     private bool _disposed;
 
     public PartyChatClient(ManualLogSource log, HttpClient? http = null, PartyChatOptions? options = null)
@@ -139,16 +140,21 @@ internal sealed partial class PartyChatClient : IDisposable
                 _snapshotMessages = Array.AsReadOnly(_messages.ToArray());
                 _snapshotRevision = _revision;
             }
-            return new PartyUiSnapshot(_revision, _status, _snapshotMessages);
+            if (_snapshot == null || _snapshot.Revision != _revision
+                || !string.Equals(_snapshot.Status, _status, StringComparison.Ordinal))
+                _snapshot = new PartyUiSnapshot(_revision, _status, _snapshotMessages);
+            return _snapshot;
         }
     }
 
-    private void StopSession(string status)
+    private bool StopSession(string status, bool disposing = false)
     {
         PartySession? session;
         PartyConnection? connection;
         lock (_gate)
         {
+            if (_disposed) return false;
+            if (disposing) _disposed = true;
             session = _session;
             connection = _connection;
             _session = null;
@@ -163,17 +169,12 @@ internal sealed partial class PartyChatClient : IDisposable
         }
         session?.Cancel();
         connection?.Abort();
+        return true;
     }
 
     public void Dispose()
     {
-        lock (_gate)
-        {
-            if (_disposed) return;
-            _disposed = true;
-        }
-        StopSession("채팅 종료됨");
-        _http.Dispose();
+        if (StopSession("채팅 종료됨", disposing: true)) _http.Dispose();
     }
 
     private void SetStatus(PartySession session, string status)

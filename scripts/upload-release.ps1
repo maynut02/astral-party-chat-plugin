@@ -59,7 +59,7 @@ $repository = $match.Groups['repository'].Value
 $selector = "github.com/$repository"
 
 if (-not $AssetRoot) { $AssetRoot = Join-Path $repoRoot "dist/release/$Tag" }
-$AssetRoot = [IO.Path]::GetFullPath($AssetRoot)
+$AssetRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($AssetRoot)
 $zipName = "AstralPartyChatPlugin-$Tag.zip"
 $names = @($zipName, 'SHA256SUMS.txt')
 $hashes = @{}
@@ -80,7 +80,7 @@ try {
     }
 } finally { $archive.Dispose() }
 if ($NotesFile) {
-    $NotesFile = [IO.Path]::GetFullPath($NotesFile)
+    $NotesFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($NotesFile)
     if (-not (Test-Path -LiteralPath $NotesFile -PathType Leaf)) { throw 'Missing release notes file.' }
 }
 else {

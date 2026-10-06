@@ -19,6 +19,7 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
     // Keep the installed plugin identity stable across display/assembly renames.
     public const string PluginGuid = "astral-party.chat";
     public const string PluginName = "AstralPartyChatPlugin";
+    public const string PluginVersion = global::AstralBuildVersion.Value;
 
     private Harmony? _harmony;
     private PartyChatClient? _client;

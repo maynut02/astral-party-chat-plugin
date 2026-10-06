@@ -273,6 +273,7 @@ namespace UnityEngine
         public static KeyCode? PressedKey { get; set; }
         public static bool MouseButtonHeld { get; set; }
         public static bool BlockedMouseReadObserved { get; private set; }
+        public static int ResetInputAxesCallCount { get; private set; }
         public static bool GetMouseButton(int button)
         {
             if (ChatOverlay.ShouldBlockRawMouseInput())
@@ -288,6 +289,7 @@ namespace UnityEngine
         public static float GetAxisRaw(string name) => 0f;
         public static void ResetInputAxes()
         {
+            ResetInputAxesCallCount++;
             mouseScrollDelta = Vector2.zero;
             MouseButtonHeld = false;
         }
@@ -300,6 +302,7 @@ namespace UnityEngine
             PressedKey = null;
             MouseButtonHeld = false;
             BlockedMouseReadObserved = false;
+            ResetInputAxesCallCount = 0;
             Time.frameCount = 0;
             Time.unscaledTime = 0f;
             RectTransformUtility.HitRect = null;
@@ -718,6 +721,7 @@ namespace AstralPartyChatPlugin
         internal static void CloseChatWindowForTest() => SetChatWindowOpen(false);
         internal static int GetDraftWriteCount() => _chatInputField.TextWriteCount;
         internal static string GetStatusText() => _chatRoomText.text;
+        internal static void RefreshInputStatusForTest() => UpdateChatInputStatus();
         internal static void SetDraft(string text) => _chatInputField.text = text;
 
         internal static void TickInputForTest(KeyCode? key = null)
