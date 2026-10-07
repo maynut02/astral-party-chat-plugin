@@ -5,6 +5,7 @@
     <AssemblyName>AstralPartyChatPlugin</AssemblyName>
     <RootNamespace>AstralPartyChatPlugin</RootNamespace>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
 

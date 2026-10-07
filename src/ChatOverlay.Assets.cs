@@ -15,7 +15,7 @@ internal static partial class ChatOverlay
 {
     private const string PreferredChatFontName = "Afacad-Regular";
     private static readonly object CharacterImageSync = new();
-    private static readonly Dictionary<string, Sprite> CharacterImageSprites =
+    private static readonly Dictionary<string, Texture2D> CharacterImageTextures =
         new(StringComparer.Ordinal);
     private static readonly Dictionary<string, long> CharacterImageRequested =
         new(StringComparer.Ordinal);
@@ -81,7 +81,7 @@ internal static partial class ChatOverlay
             CharacterImageRequested.Clear();
             CharacterImageRetryAfter.Clear();
             CharacterImageReady.Clear();
-            CharacterImageSprites.Clear();
+            CharacterImageTextures.Clear();
         }
 
         try { lifetime?.Cancel(); }
@@ -113,16 +113,21 @@ internal static partial class ChatOverlay
         if (resource is null)
             throw new ArgumentNullException(nameof(resource));
 
+        // Keep overlay-owned resources alive across Unity's scene cleanup;
+        // ShutdownAssets explicitly releases them.
+        resource.hideFlags |= HideFlags.DontUnloadUnusedAsset;
         OwnedUnityResources.Add(resource);
         return resource;
     }
 
     private static void ReleaseOwnedUnityResource(UnityEngine.Object? resource)
     {
-        if (resource == null)
+        if (resource is null)
             return;
 
         OwnedUnityResources.Remove(resource);
+        if (resource == null)
+            return;
         try { UnityEngine.Object.Destroy(resource); }
         catch { }
     }
@@ -140,29 +145,35 @@ internal static partial class ChatOverlay
     private static void RequestCharacterImage(string characterId)
     {
         var id = PartyProtocol.NormalizeCharacter(characterId);
-        if (id == "spectator")
+        if (!HasCharacterPortrait(id))
             return;
 
-        long generation;
-        CancellationToken token;
+        if (TryReserveCharacterImageRequest(id, out var generation, out var token))
+            _ = DownloadCharacterImageAsync(id, generation, token);
+    }
+
+    private static bool TryReserveCharacterImageRequest(string id, out long generation, out CancellationToken token)
+    {
+        generation = 0;
+        token = default;
         lock (CharacterImageSync)
         {
             if (_assetsShutdown
                 || _characterImageLifetime == null
-                || CharacterImageSprites.ContainsKey(id)
+                || _characterImageLifetime.IsCancellationRequested
+                || TryGetCharacterTexture(id, out _)
                 || CharacterImageRequested.ContainsKey(id))
-                return;
+                return false;
 
             if (CharacterImageRetryAfter.TryGetValue(id, out var retryAfter)
                 && DateTime.UtcNow < retryAfter)
-                return;
+                return false;
 
             generation = _characterImageGeneration;
             token = _characterImageLifetime.Token;
             CharacterImageRequested[id] = generation;
+            return true;
         }
-
-        _ = DownloadCharacterImageAsync(id, generation, token);
     }
 
     private static async Task DownloadCharacterImageAsync(
@@ -235,7 +246,6 @@ internal static partial class ChatOverlay
             }
 
             Texture2D? texture = null;
-            Sprite? sprite = null;
             try
             {
                 if (!RemotePayload.IsSafePortraitPng(item.Bytes, out var width, out var height))
@@ -255,19 +265,13 @@ internal static partial class ChatOverlay
                     continue;
                 }
 
-                sprite = CreateOwnedSprite(
-                    texture,
-                    new Rect(0f, 0f, texture.width, texture.height),
-                    new Vector2(0.5f, 0.5f),
-                    100f);
-
                 var accepted = false;
                 lock (CharacterImageSync)
                 {
                     if (!_assetsShutdown
                         && item.Generation == _characterImageGeneration)
                     {
-                        CharacterImageSprites[item.CharacterId] = sprite;
+                        CharacterImageTextures[item.CharacterId] = texture;
                         CharacterImageRequested.Remove(item.CharacterId);
                         CharacterImageRetryAfter.Remove(item.CharacterId);
                         accepted = true;
@@ -276,27 +280,38 @@ internal static partial class ChatOverlay
 
                 if (accepted)
                 {
-                    RefreshRenderedCharacterImage(item.CharacterId, sprite);
+                    RefreshRenderedCharacterImage(item.CharacterId, texture);
                 }
                 else
                 {
-                    ReleaseOwnedUnityResource(sprite);
                     ReleaseOwnedUnityResource(texture);
                 }
             }
             catch
             {
-                ReleaseOwnedUnityResource(sprite);
                 ReleaseOwnedUnityResource(texture);
                 MarkCharacterImageFailure(item.CharacterId, item.Generation);
             }
         }
     }
 
-    private static bool TryGetCharacterSprite(string characterId, out Sprite? sprite)
+    private static bool TryGetCharacterTexture(string characterId, out Texture2D? texture)
     {
         lock (CharacterImageSync)
-            return CharacterImageSprites.TryGetValue(characterId, out sprite);
+        {
+            if (CharacterImageTextures.TryGetValue(characterId, out texture))
+            {
+                if (texture != null)
+                    return true;
+
+                // A destroyed Unity object still has a managed wrapper. Evict
+                // it so the next refresh can request this exact ID again.
+                CharacterImageTextures.Remove(characterId);
+                ReleaseOwnedUnityResource(texture);
+            }
+            texture = null;
+            return false;
+        }
     }
 
     private static MethodInfo? FindResourcesFontMethod()

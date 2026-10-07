@@ -19,28 +19,14 @@ internal static partial class GameChatRuntime
 
             _scanCameras = Array.Empty<Camera>();
 
-            BattlePortraitCache.Clear();
-            _portraitCacheGeneration++;
             WarningNextAt.Clear();
-            NativeWrapperTypeCache.Clear();
 
-            _steamClientType = null;
-            _steamNameProperty = null;
-            _cachedSteamName = string.Empty;
-            _nextSteamNameRefreshAt = 0f;
-            _nextSteamTypeLookupAt = 0f;
+            NativeData.Clear();
+            _gameState = GameStateReader.Pending();
+            _nextGameDataAt = 0f;
 
             _findObjectsOfTypeAll = null;
             _log = null;
-        }
-    }
-
-    private static void ResetBattlePortraitCache()
-    {
-        lock (Sync)
-        {
-            BattlePortraitCache.Clear();
-            _portraitCacheGeneration++;
         }
     }
 

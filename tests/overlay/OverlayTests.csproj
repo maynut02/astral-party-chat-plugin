@@ -13,6 +13,7 @@
     <Compile Include="OverlayShim.cs" />
     <Compile Include="ScrollControlsTests.cs" />
     <Compile Include="KeyboardInputTests.cs" />
+    <Compile Include="PortraitStateTests.cs" />
     <Compile Include="../../src/ChatOverlay.Input.cs" Link="ChatOverlay.Input.cs" />
     <Compile Include="../../src/AstralPartyChatPlugin.Input.cs" Link="AstralPartyChatPlugin.Input.cs" />
     <Compile Include="../../src/ChatInputSubmitState.cs" Link="ChatInputSubmitState.cs" />

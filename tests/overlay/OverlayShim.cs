@@ -483,43 +483,6 @@ namespace AstralPartyChatPlugin
         public bool ChatButtonVisible { get; set; }
     }
 
-    internal sealed class GamePortraitResource
-    {
-        public GamePortraitResource(Texture texture, Rect uvRect)
-        {
-            Texture = texture;
-            UvRect = uvRect;
-        }
-
-        public Texture Texture { get; }
-        public Rect UvRect { get; }
-    }
-
-    internal static class GameChatRuntime
-    {
-        private static Func<string, GamePortraitResource?>? _portraitLookup;
-        public static int PortraitLookupCount { get; private set; }
-
-        public static bool TryGetBattlePlayerPortrait(
-            string nickname,
-            out GamePortraitResource? portrait)
-        {
-            PortraitLookupCount++;
-            portrait = _portraitLookup?.Invoke(nickname);
-            return portrait?.Texture != null;
-        }
-
-        public static void ConfigurePortraitLookup(Func<string, GamePortraitResource?>? lookup)
-        {
-            _portraitLookup = lookup;
-        }
-
-        public static void ResetHarness()
-        {
-            PortraitLookupCount = 0;
-            _portraitLookup = null;
-        }
-    }
 
     internal static partial class ChatOverlay
     {
@@ -544,6 +507,7 @@ namespace AstralPartyChatPlugin
         private const string ChatWindowXPref = "Harness.WindowX";
         private const string ChatWindowYPref = "Harness.WindowY";
         private static readonly Dictionary<string, Sprite> CdnSprites = new(StringComparer.Ordinal);
+        private static readonly List<string> CharacterImageRequests = new();
 
         internal readonly record struct RowSnapshot(
             GameObject Root,
@@ -613,11 +577,14 @@ namespace AstralPartyChatPlugin
             rect.sizeDelta = size;
         }
 
-        private static void RequestCharacterImage(string characterId) { }
+        private static void RequestCharacterImage(string characterId) => CharacterImageRequests.Add(characterId);
         private static void ProcessCharacterImageDownloads() { }
 
-        private static bool TryGetCharacterSprite(string characterId, out Sprite? sprite) =>
-            CdnSprites.TryGetValue(characterId, out sprite);
+        private static bool TryGetCharacterTexture(string characterId, out Texture? texture)
+        {
+            texture = CdnSprites.TryGetValue(characterId, out var sprite) ? sprite.texture : null;
+            return texture != null;
+        }
 
         internal static IReadOnlyList<RowSnapshot> InspectRows() => RenderedChatRows
             .Select(row => new RowSnapshot(
@@ -712,6 +679,13 @@ namespace AstralPartyChatPlugin
         internal static void SetCdnSprite(string characterId, Sprite sprite) =>
             CdnSprites[characterId] = sprite;
 
+        internal static IReadOnlyList<string> InspectCharacterImageRequests() => CharacterImageRequests.ToArray();
+        internal static void PublishCdnPortraitForTest(string characterId, Sprite sprite)
+        {
+            CdnSprites[characterId] = sprite;
+            RefreshRenderedCharacterImage(characterId, sprite.texture);
+        }
+
         internal static void RefreshPortraitsForTest(ChatSnapshot snapshot) =>
             RefreshRenderedPortraits(snapshot);
 
@@ -799,7 +773,7 @@ namespace AstralPartyChatPlugin
                 _chatScrollRect.scrollSensitivity = ChatWheelStep;
             }
             CdnSprites.Clear();
-            GameChatRuntime.ResetHarness();
+            CharacterImageRequests.Clear();
         }
     }
 }

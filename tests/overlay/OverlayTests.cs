@@ -21,7 +21,7 @@ internal static class OverlayTests
         Run("row height follows measured multiline preferred height", MultilineUsesPreferredHeight);
         Run("trim preserves the reader's top offset", TrimPreservesScrollOffset);
         Run("non-battle CDN retry updates a portrait in place", NonBattleCdnRetryUpdatesInPlace);
-        Run("invalidated game portrait falls back to CDN in place", InvalidatedGamePortraitFallsBack);
+        Run("stale portraits clear before the exact-ID CDN image arrives in every phase", StalePortraitIsClearedBeforeCdnArrival);
         Run("display truncation counts Unicode code points", DisplayTruncationUsesUnicodeCodePoints);
         Run("Enter and send button reject over-limit drafts without changing text", OverLimitDraftIsPreserved);
         Run("1000 code points send intact through Enter and the send button", CodePointBoundarySendsIntact);
@@ -37,6 +37,7 @@ internal static class OverlayTests
         Console.WriteLine($"{_passed} overlay regression checks passed ({_assertions} assertions).");
         ScrollControlsTests.Run();
         KeyboardInputTests.Run();
+        PortraitStateTests.Run();
         return 0;
     }
 
@@ -246,29 +247,47 @@ internal static class OverlayTests
         Equal(destroyedBeforeRefresh, UnityObject.DestroyCallCount, "objects destroyed by portrait refresh");
     }
 
-    private static void InvalidatedGamePortraitFallsBack()
+    private static void StalePortraitIsClearedBeforeCdnArrival()
     {
-        ChatOverlay.ResetHarness();
-        var gameTexture = new Texture();
-        GameChatRuntime.ConfigurePortraitLookup(_ => new GamePortraitResource(gameTexture, new Rect(0f, 0f, 1f, 1f)));
-        ChatOverlay.SetChatMessages(new[]
+        foreach (var phase in new[] { "방", "캐릭터 선택", "플레이" })
         {
-            new ChatUiMessage { Id = "battle-portrait", Sender = "Mina", CharacterId = "101", Text = "battle" }
-        });
-        var snapshot = new ChatSnapshot { RoomId = "123456", ScreenPhase = "플레이" };
-        Time.unscaledTime = 0f;
-        ChatOverlay.RefreshPortraitsForTest(snapshot);
-        var row = ChatOverlay.InspectRows().Single();
-        Same(gameTexture, row.Portrait!.texture!, "initial game portrait");
-        var cdnTexture = new Texture();
-        ChatOverlay.SetCdnSprite("101", new Sprite(cdnTexture));
-        GameChatRuntime.ConfigurePortraitLookup(_ => null);
-        row.Portrait.texture = null;
-        Time.unscaledTime = 3f;
-        ChatOverlay.RefreshPortraitsForTest(snapshot);
-        Same(row.Root, ChatOverlay.InspectRows().Single().Root, "row after invalidated texture");
-        Same(cdnTexture, row.Portrait.texture!, "CDN fallback texture");
-        True(row.Portrait.gameObject.activeSelf, "fallback portrait visibility");
+            ChatOverlay.ResetHarness();
+            ChatOverlay.SetChatMessages(new[]
+            {
+                new ChatUiMessage { Id = "exact-id-portrait", Sender = "Mina", CharacterId = "101", Text = "portrait" }
+            });
+            var row = ChatOverlay.InspectRows().Single();
+            var staleTexture = new Texture();
+            row.Portrait!.texture = staleTexture;
+            row.Portrait.uvRect = new Rect(0.2f, 0.3f, 0.4f, 0.5f);
+            row.Portrait.gameObject.SetActive(true);
+            var snapshot = new ChatSnapshot { RoomId = "123456", ScreenPhase = phase };
+            ChatOverlay.RefreshPortraitsForTest(snapshot);
+            True(row.Portrait.texture == null && !row.Portrait.gameObject.activeSelf, "stale portrait hidden while CDN is pending");
+            True(!staleTexture.IsDestroyed, "unowned game texture is not destroyed");
+
+            var cdnTexture = new Texture();
+            ChatOverlay.SetCdnSprite("101", new Sprite(cdnTexture));
+            Time.unscaledTime = 3f;
+            ChatOverlay.RefreshPortraitsForTest(snapshot);
+            Same(row.Root, ChatOverlay.InspectRows().Single().Root, "CDN arrival reuses row");
+            Same(cdnTexture, row.Portrait.texture!, "exact-ID CDN texture");
+            True(row.Portrait.gameObject.activeSelf, "CDN portrait visible");
+            Near(0f, row.Portrait.uvRect.x, 0.001f, "CDN UV origin X");
+            Near(0f, row.Portrait.uvRect.y, 0.001f, "CDN UV origin Y");
+            Near(1f, row.Portrait.uvRect.width, 0.001f, "CDN full UV width");
+            Near(1f, row.Portrait.uvRect.height, 0.001f, "CDN full UV height");
+
+            // Even a live-looking stale texture must be corrected on a later
+            // refresh within the same room and phase, or on a layout reflow.
+            row.Portrait.texture = staleTexture;
+            Time.unscaledTime = 6f;
+            ChatOverlay.RefreshPortraitsForTest(snapshot);
+            Same(cdnTexture, row.Portrait.texture!, "same-context refresh replaces stale texture");
+            row.Portrait.texture = staleTexture;
+            ChatOverlay.RenderMessagesForTest();
+            Same(cdnTexture, row.Portrait.texture!, "retained-row reflow replaces stale texture");
+        }
     }
 
     private static void DisplayTruncationUsesUnicodeCodePoints()

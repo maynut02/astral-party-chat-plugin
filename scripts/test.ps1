@@ -9,7 +9,7 @@ if (-not $WorkRoot) { $WorkRoot = Join-Path $repoRoot '.work' }
 $dotnet = Get-AstralDotnet -Root $repoRoot -WorkRoot $WorkRoot -DotNetPath $DotNetPath
 Push-Location -LiteralPath $repoRoot
 try {
-    foreach ($project in @('tests/AstralPartyChatPlugin.Tests.csproj', 'tests/overlay/OverlayTests.csproj', 'tests/security/PayloadTests.csproj')) {
+    foreach ($project in @('tests/AstralPartyChatPlugin.Tests.csproj', 'tests/overlay/OverlayTests.csproj', 'tests/assets/PortraitAssetsTests.csproj', 'tests/security/PayloadTests.csproj')) {
         & $dotnet run --project (Join-Path $repoRoot $project) --configuration Release
         if ($LASTEXITCODE -ne 0) { throw "Runtime regression checks failed: $project" }
     }

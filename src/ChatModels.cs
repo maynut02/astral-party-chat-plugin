@@ -2,6 +2,7 @@ namespace AstralPartyChatPlugin;
 
 public sealed class ChatGameState
 {
+    public bool InformationReady { get; init; } = true;
     public bool Available { get; init; }
     public string Phase { get; init; } = string.Empty;
     public string RoomId { get; init; } = string.Empty;

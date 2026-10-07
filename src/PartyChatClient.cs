@@ -55,6 +55,11 @@ internal sealed partial class PartyChatClient : IDisposable
 
     public void UpdateGameState(ChatGameState state)
     {
+        if (!state.InformationReady)
+        {
+            StopSession("게임 정보 확인 중");
+            return;
+        }
         var roomId = (state.RoomId ?? string.Empty).Trim();
         var nickname = (state.Nickname ?? string.Empty).Trim();
         if (!state.Available || !PartyProtocol.IsRoomId(roomId)
@@ -198,6 +203,7 @@ internal sealed partial class PartyChatClient : IDisposable
     {
         var normalized = PartyProtocol.NormalizeCharacter(character);
         if (normalized == "spectator") return "관전";
+        if (normalized == "unselected") return "미선택";
         return _characterNames.TryGetValue(normalized, out var name) ? name : normalized;
     }
     private static string GetString(JsonElement element, string propertyName) =>

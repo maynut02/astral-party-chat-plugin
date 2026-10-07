@@ -41,6 +41,7 @@ internal static class PartyProtocol
     public static string NormalizeCharacter(string? value)
     {
         var normalized = value?.Trim() ?? string.Empty;
+        if (normalized == "unselected") return normalized;
         return CharacterIds.Contains(normalized) ? normalized : "spectator";
     }
 

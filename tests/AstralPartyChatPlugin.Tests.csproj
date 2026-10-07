@@ -8,11 +8,13 @@
   <ItemGroup>
     <Compile Remove="overlay/**/*.cs" />
     <Compile Remove="security/**/*.cs" />
+    <Compile Remove="assets/**/*.cs" />
     <Compile Include="../src/PartyChatClient*.cs" Link="%(Filename)%(Extension)" />
     <Compile Include="../src/PartyProtocol.cs" Link="PartyProtocol.cs" />
     <Compile Include="../src/RemotePayload.cs" Link="RemotePayload.cs" />
     <Compile Include="../src/ChatModels.cs" Link="ChatModels.cs" />
     <Compile Include="../src/GameSessionState.cs" Link="GameSessionState.cs" />
+    <Compile Include="../src/GameStateReader.cs" Link="GameStateReader.cs" />
     <Compile Include="../src/ChatInputSubmitState.cs" Link="ChatInputSubmitState.cs" />
   </ItemGroup>
 </Project>

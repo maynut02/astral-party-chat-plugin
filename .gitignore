@@ -2,6 +2,7 @@ bin/
 obj/
 dist/
 .work/
+.pnpm-store/
 .agents/
 .vs/
 .vscode/

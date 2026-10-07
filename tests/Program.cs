@@ -565,6 +565,38 @@ var tests = new List<(string Name, Func<Task> Run)>
     })
 };
 
+tests.AddRange(GameStateReaderTests.Cases);
+tests.Add(("Unselected players retain their pick order through character selection", async () =>
+{
+    using var f = new Fixture();
+    f.Start(character: "unselected", order: "P3", nickname: "인게임닉");
+    await f.Joined();
+    var socket = f.Latest;
+    Check.True(socket.Character == "unselected" && socket.Order == "P3" && socket.Nickname == "인게임닉",
+        "JOIN confused a player who has not chosen a character with a spectator.");
+    f.Client.SendChat("before selection");
+    await Check.Eventually(() => f.Client.GetUiSnapshot().Messages.Any(m => m.Text == "before selection" && !m.Id.StartsWith("local:")));
+    Check.True(f.Client.GetUiSnapshot().Messages.Single(m => m.Text == "before selection").CharacterName == "미선택",
+        "Unselected character label is inaccurate.");
+    f.Start(character: "105", order: "P3", nickname: "인게임닉");
+    await Check.Eventually(() => socket.Character == "105");
+    Check.True(f.Sockets.Count == 1 && socket.Order == "P3", "Selecting a hero changed the game room session or lost the pick order.");
+    f.Start(character: "unselected", order: "P2", nickname: "인게임닉");
+    await Check.Eventually(() => socket.Character == "unselected" && socket.Order == "P2");
+    Check.True(f.Sockets.Count == 1, "Returning to selection created another socket unnecessarily.");
+}));
+tests.Add(("Missing game information stops stale identity and reconnects after synchronization", async () =>
+{
+    using var f = new Fixture(); f.Start(); await f.Joined();
+    var old = f.Latest;
+    f.Client.UpdateGameState(GameStateReader.Pending());
+    Check.True(f.Client.GetUiSnapshot().Status == "게임 정보 확인 중", "Unreadable game data was displayed as a valid room.");
+    await Check.Eventually(() => old.DisposeCount == 1);
+    f.Start(order: "P4", nickname: "복원된 인게임닉"); await f.Joined();
+    Check.True(f.Latest.Nickname == "복원된 인게임닉" && f.Latest.Order == "P4", "Reconnect reused stale player details.");
+    Check.True(f.Handler.RoomBodies.Last().GetProperty("roomId").GetString() == "123456", "Reconnect joined another room.");
+}));
+
 var failures = 0;
 foreach (var (name, run) in tests)
 {

@@ -9,7 +9,6 @@ namespace AstralPartyChatPlugin;
 internal static partial class ChatOverlay
 {
     private const int MaximumRenderedMessages = 300;
-    private const int MaximumPortraitLookupsPerPass = 8;
     private const int MaximumDisplayedMessageLength = 1400;
     private const float MinimumMessageRowHeight = 90f;
     private const float MaximumMessageRowHeight = 42000f;
@@ -20,7 +19,6 @@ internal static partial class ChatOverlay
     private static string _renderedPortraitRoomId = string.Empty;
     private static string _renderedPortraitPhase = string.Empty;
     private static float _nextRenderedPortraitRefreshAt;
-    private static int _portraitRefreshCursor;
 
     public static void SetChatMessages(IEnumerable<ChatUiMessage> messages)
     {
@@ -204,7 +202,10 @@ internal static partial class ChatOverlay
         {
             var row = RenderedChatRows[index];
             if (force || widthChanged)
+            {
                 MeasureRenderedRow(row);
+                ApplyCdnPortrait(row);
+            }
 
             var height = SanitizeRowHeight(row.Height);
             SetTopLeftRect(
@@ -333,8 +334,7 @@ internal static partial class ChatOverlay
                     _chatTexts.Skip(firstTextIndex).ToList(),
                     null,
                     null,
-                    string.Empty,
-                    message.Sender ?? string.Empty);
+                    string.Empty);
                 MeasureSystemRow(row, text);
                 return row;
             }
@@ -353,13 +353,13 @@ internal static partial class ChatOverlay
             portraitObject.SetActive(false);
             SetTopLeftRect(
                 portraitObject.GetComponent<RectTransform>(),
-                new Vector2(-6f, 2f),
-                new Vector2(82f, 82f));
+                new Vector2(0f, 8f),
+                new Vector2(60f, 60f));
 
             var participant = CreateUiText(
                 root.transform,
                 "Participant",
-                BuildParticipantLabel(message.Order, message.CharacterName),
+                BuildParticipantLabel(message.Order, message.CharacterName, message.CharacterId),
                 18,
                 GetOrderTextColor(message.Order),
                 TextAnchor.MiddleLeft,
@@ -399,21 +399,9 @@ internal static partial class ChatOverlay
                 _chatTexts.Skip(firstTextIndex).ToList(),
                 body,
                 portrait,
-                message.Sender ?? string.Empty,
                 message.CharacterId ?? string.Empty);
 
-            if (!TryUseGamePortrait(rendered))
-            {
-                RequestCharacterImage(rendered.CharacterId);
-                if (TryGetCharacterSprite(rendered.CharacterId, out var sprite)
-                    && sprite != null
-                    && sprite.texture != null)
-                    SetRenderedPortrait(
-                        rendered,
-                        sprite.texture,
-                        new Rect(0f, 0f, 1f, 1f),
-                        isGamePortrait: false);
-            }
+            ApplyCdnPortrait(rendered);
 
             MeasureRenderedRow(rendered);
             return rendered;
@@ -431,44 +419,16 @@ internal static partial class ChatOverlay
         }
     }
 
-    private static bool TryUseGamePortrait(RenderedChatRow row)
+    private static bool HasCharacterPortrait(string? characterId) =>
+        PartyProtocol.NormalizeCharacter(characterId) is not ("spectator" or "unselected");
+
+    private static void SetRenderedPortrait(RenderedChatRow row, Texture texture)
     {
-        if (string.IsNullOrWhiteSpace(row.Sender))
-            return false;
-
-        // Callers are the frame-bound UI render path on Unity's main thread.
-        // CDN continuations only enqueue bytes and never touch game resources.
-        try
-        {
-            if (GameChatRuntime.TryGetBattlePlayerPortrait(row.Sender, out var portrait)
-                && portrait != null
-                && portrait.Texture != null)
-            {
-                SetRenderedPortrait(
-                    row,
-                    portrait.Texture,
-                    portrait.UvRect,
-                    isGamePortrait: true);
-                return true;
-            }
-        }
-        catch { }
-
-        return false;
-    }
-
-    private static void SetRenderedPortrait(
-        RenderedChatRow row,
-        Texture texture,
-        Rect uvRect,
-        bool isGamePortrait)
-    {
-        if (row.Portrait == null)
+        if (row.Portrait == null || !HasCharacterPortrait(row.CharacterId))
             return;
 
         row.Portrait.texture = texture;
-        row.Portrait.uvRect = uvRect;
-        row.IsGamePortrait = isGamePortrait;
+        row.Portrait.uvRect = new Rect(0f, 0f, 1f, 1f);
         row.Portrait.gameObject.SetActive(true);
     }
 
@@ -477,15 +437,8 @@ internal static partial class ChatOverlay
         ObserveChatScrollContext(snapshot);
         var roomId = snapshot.RoomId ?? string.Empty;
         var phase = snapshot.ScreenPhase ?? string.Empty;
-        var contextChanged = !string.Equals(
-                roomId,
-                _renderedPortraitRoomId,
-                StringComparison.Ordinal)
-            || !string.Equals(
-                phase,
-                _renderedPortraitPhase,
-                StringComparison.Ordinal);
-        var isBattle = string.Equals(phase, "플레이", StringComparison.Ordinal);
+        var contextChanged = !string.Equals(roomId, _renderedPortraitRoomId, StringComparison.Ordinal)
+            || !string.Equals(phase, _renderedPortraitPhase, StringComparison.Ordinal);
         var now = Time.unscaledTime;
 
         if (!contextChanged && now < _nextRenderedPortraitRefreshAt)
@@ -495,75 +448,10 @@ internal static partial class ChatOverlay
         _renderedPortraitPhase = phase;
         _nextRenderedPortraitRefreshAt = now + 2f;
 
-        var portraitsBySender = new Dictionary<string, GamePortraitResource?>(StringComparer.Ordinal);
-        if (contextChanged)
-        {
-            foreach (var row in RenderedChatRows)
-            {
-                row.IsGamePortrait = false;
-                ApplyCdnPortrait(row);
-            }
-        }
-
-        if (!isBattle || RenderedChatRows.Count == 0)
-        {
-            if (!contextChanged)
-            {
-                foreach (var row in RenderedChatRows)
-                {
-                    if (!row.IsGamePortrait && !HasUsablePortrait(row))
-                        ApplyCdnPortrait(row);
-                }
-            }
-
-            _portraitRefreshCursor = 0;
-            return;
-        }
-
-        var startIndex = _portraitRefreshCursor % RenderedChatRows.Count;
-        var nextCursor = startIndex;
-        var lookups = 0;
-        for (var offset = 0; offset < RenderedChatRows.Count; offset++)
-        {
-            var rowIndex = (startIndex + offset) % RenderedChatRows.Count;
-            var row = RenderedChatRows[rowIndex];
-            if (string.IsNullOrWhiteSpace(row.Sender))
-                continue;
-
-            if (!portraitsBySender.TryGetValue(row.Sender, out var portrait))
-            {
-                if (lookups >= MaximumPortraitLookupsPerPass)
-                    continue;
-
-                portrait = null;
-                try
-                {
-                    if (GameChatRuntime.TryGetBattlePlayerPortrait(row.Sender, out var found)
-                        && found != null
-                        && found.Texture != null)
-                        portrait = found;
-                }
-                catch { }
-                portraitsBySender[row.Sender] = portrait;
-                lookups++;
-                nextCursor = (rowIndex + 1) % RenderedChatRows.Count;
-            }
-
-            if (portrait?.Texture != null)
-            {
-                SetRenderedPortrait(
-                    row,
-                    portrait.Texture,
-                    portrait.UvRect,
-                    isGamePortrait: true);
-            }
-            else if (!HasUsablePortrait(row))
-            {
-                ApplyCdnPortrait(row);
-            }
-        }
-
-        _portraitRefreshCursor = nextCursor;
+        // Reconcile every retained row with its exact ID, even when it already
+        // has a texture. A stale game/UI portrait must never survive a refresh.
+        foreach (var row in RenderedChatRows)
+            ApplyCdnPortrait(row);
     }
 
     private static void ApplyCdnPortrait(RenderedChatRow row)
@@ -571,30 +459,19 @@ internal static partial class ChatOverlay
         if (row.Portrait == null)
             return;
 
-        row.IsGamePortrait = false;
-        RequestCharacterImage(row.CharacterId);
-        if (TryGetCharacterSprite(row.CharacterId, out var sprite)
-            && sprite != null
-            && sprite.texture != null)
+        if (HasCharacterPortrait(row.CharacterId))
         {
-            SetRenderedPortrait(
-                row,
-                sprite.texture,
-                new Rect(0f, 0f, 1f, 1f),
-                isGamePortrait: false);
-            return;
+            RequestCharacterImage(row.CharacterId);
+            if (TryGetCharacterTexture(row.CharacterId, out var texture)
+                && texture != null)
+            {
+                SetRenderedPortrait(row, texture);
+                return;
+            }
         }
 
         row.Portrait.texture = null;
         row.Portrait.gameObject.SetActive(false);
-    }
-
-    private static bool HasUsablePortrait(RenderedChatRow row)
-    {
-        var portrait = row.Portrait;
-        return portrait != null
-            && portrait.gameObject.activeSelf
-            && portrait.texture != null;
     }
 
     private static void MeasureRenderedRow(RenderedChatRow row)
@@ -681,20 +558,15 @@ internal static partial class ChatOverlay
         catch { }
     }
 
-    private static void RefreshRenderedCharacterImage(string characterId, Sprite sprite)
+    private static void RefreshRenderedCharacterImage(string characterId, Texture texture)
     {
-        if (sprite == null || sprite.texture == null)
+        if (texture == null)
             return;
 
         foreach (var row in RenderedChatRows)
         {
-            if (!row.IsGamePortrait
-                && string.Equals(row.CharacterId, characterId, StringComparison.Ordinal))
-                SetRenderedPortrait(
-                    row,
-                    sprite.texture,
-                    new Rect(0f, 0f, 1f, 1f),
-                    isGamePortrait: false);
+            if (string.Equals(row.CharacterId, characterId, StringComparison.Ordinal))
+                SetRenderedPortrait(row, texture);
         }
     }
 
@@ -706,7 +578,6 @@ internal static partial class ChatOverlay
         _renderedPortraitRoomId = string.Empty;
         _renderedPortraitPhase = string.Empty;
         _nextRenderedPortraitRefreshAt = 0f;
-        _portraitRefreshCursor = 0;
     }
 
     private static string GetDisplayMessageText(string? value)
@@ -718,12 +589,13 @@ internal static partial class ChatOverlay
         return PartyProtocol.LimitText(text, MaximumDisplayedMessageLength - 1) + "…";
     }
 
-    private static string BuildParticipantLabel(string order, string characterName)
+    private static string BuildParticipantLabel(string order, string characterName, string characterId)
     {
         var normalizedOrder = (order ?? string.Empty).Trim().ToUpperInvariant();
-        var name = string.IsNullOrWhiteSpace(characterName)
-            ? "관전"
-            : characterName.Trim();
+        var normalizedCharacter = PartyProtocol.NormalizeCharacter(characterId);
+        var name = normalizedCharacter == "unselected" ? "미선택"
+            : normalizedCharacter == "spectator" || string.IsNullOrWhiteSpace(characterName)
+                ? "관전" : characterName.Trim();
 
         return normalizedOrder is "P1" or "P2" or "P3" or "P4"
             ? normalizedOrder + " · " + name
@@ -752,7 +624,6 @@ internal static partial class ChatOverlay
             List<Text> texts,
             Text? body,
             RawImage? portrait,
-            string sender,
             string characterId)
         {
             Identity = identity;
@@ -762,8 +633,7 @@ internal static partial class ChatOverlay
             Texts = texts;
             Body = body;
             Portrait = portrait;
-            Sender = sender;
-            CharacterId = characterId;
+            CharacterId = PartyProtocol.NormalizeCharacter(characterId);
         }
 
         public string Identity { get; }
@@ -773,9 +643,7 @@ internal static partial class ChatOverlay
         public List<Text> Texts { get; }
         public Text? Body { get; }
         public RawImage? Portrait { get; }
-        public string Sender { get; }
         public string CharacterId { get; }
         public float Height { get; set; }
-        public bool IsGamePortrait { get; set; }
     }
 }
