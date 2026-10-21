@@ -30,8 +30,9 @@ internal static partial class ChatOverlay
     private static long _characterImageGeneration;
     private static bool _assetsShutdown = true;
     private static Font? _gameKoreanFont;
-    private static Font? _appliedGameKoreanFont;
+    private static Font? _appliedChatFont;
     private static Font? _font;
+    private static Texture2D? _chatIconTexture;
     private static float _nextFontSearchAt;
     private static bool _fontWasFound;
 
@@ -87,6 +88,10 @@ internal static partial class ChatOverlay
         try { lifetime?.Cancel(); }
         catch { }
         lifetime?.Dispose();
+        // Nodes have already been disposed by Shutdown. Free FairyGUI's
+        // materials and font callbacks before destroying owned Unity assets.
+        try { FguiNode.ShutdownResources(); }
+        catch { }
 
         for (var index = OwnedUnityResources.Count - 1; index >= 0; index--)
         {
@@ -101,8 +106,9 @@ internal static partial class ChatOverlay
         OwnedUnityResources.Clear();
 
         _gameKoreanFont = null;
-        _appliedGameKoreanFont = null;
+        _appliedChatFont = null;
         _font = null;
+        _chatIconTexture = null;
         _fontWasFound = false;
         _nextFontSearchAt = 0f;
     }
@@ -125,21 +131,17 @@ internal static partial class ChatOverlay
         if (resource is null)
             return;
 
+        if (resource is Texture texture)
+        {
+            ClearRenderedTexture(texture);
+            FguiNode.ReleaseTexture(texture);
+        }
+
         OwnedUnityResources.Remove(resource);
         if (resource == null)
             return;
         try { UnityEngine.Object.Destroy(resource); }
         catch { }
-    }
-
-    private static Sprite CreateOwnedSprite(
-        Texture2D texture,
-        Rect rect,
-        Vector2 pivot,
-        float pixelsPerUnit)
-    {
-        return TrackOwnedUnityResource(
-            Sprite.Create(texture, rect, pivot, pixelsPerUnit));
     }
 
     private static void RequestCharacterImage(string characterId)
@@ -323,7 +325,8 @@ internal static partial class ChatOverlay
                 .FirstOrDefault(candidate =>
                     string.Equals(candidate.Name, "FindObjectsOfTypeAll", StringComparison.Ordinal)
                     && candidate.IsGenericMethodDefinition
-                    && candidate.GetParameters().Length == 0);
+                    && candidate.GetParameters().Length == 0)
+                ?.MakeGenericMethod(typeof(Font));
         }
         catch
         {
@@ -331,17 +334,34 @@ internal static partial class ChatOverlay
         }
     }
 
-    private static Font GetChatFont()
-    {
-        var preferred = FindGameKoreanFont();
-        if (preferred != null)
-        {
-            _gameKoreanFont = preferred;
-            _fontWasFound = true;
-            return preferred;
-        }
+    /// <summary>
+    /// FairyGUI font alias for all chat text. It maps to the game's regular
+    /// font once loaded, and to the Windows Korean font until then.
+    /// </summary>
+    private const string ChatFontName = "AstralPartyChat";
 
-        return _gameKoreanFont ?? GetFont();
+    private static void RefreshChatFont()
+    {
+        var font = FindGameKoreanFont() ?? GetFont();
+        if (font == _appliedChatFont)
+            return;
+        FguiNode.RegisterFont(ChatFontName, font);
+        _appliedChatFont = font;
+    }
+
+    private static Texture2D GetChatIconTexture()
+    {
+        if (_chatIconTexture != null)
+            return _chatIconTexture;
+
+        var texture = TrackOwnedUnityResource(new Texture2D(2, 2, TextureFormat.RGBA32, false));
+        texture.name = "AstralPartyChatPluginMessagesIcon";
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+        var pngBytes = Convert.FromBase64String(MessagesIconData.PngBase64);
+        if (!ImageConversion.LoadImage(texture, new Il2CppStructArray<byte>(pngBytes), true))
+            throw new InvalidOperationException("Failed to load embedded messages.svg raster.");
+        return _chatIconTexture = texture;
     }
 
     private static Font? FindGameKoreanFont()
@@ -359,9 +379,7 @@ internal static partial class ChatOverlay
 
         try
         {
-            var fonts = FindAllFontsMethod
-                .MakeGenericMethod(typeof(Font))
-                .Invoke(null, null) as IEnumerable;
+            var fonts = FindAllFontsMethod.Invoke(null, null) as IEnumerable;
             if (fonts == null)
                 return null;
 
@@ -390,29 +408,18 @@ internal static partial class ChatOverlay
         if (_fontWasFound && _gameKoreanFont == null)
         {
             _fontWasFound = false;
-            _appliedGameKoreanFont = null;
             _nextFontSearchAt = 0f;
         }
 
         var preferred = FindGameKoreanFont();
-        if (preferred == null || preferred == _appliedGameKoreanFont)
+        if (preferred == null || preferred == _appliedChatFont)
             return;
 
-        _appliedGameKoreanFont = preferred;
-        var changed = false;
+        RefreshChatFont();
+        // Each text resolves the alias again and re-measures with the new font.
         foreach (var text in _chatTexts)
-        {
-            if (text == null || text.font == preferred)
-                continue;
-
-            text.font = preferred;
-            text.SetVerticesDirty();
-            text.SetLayoutDirty();
-            changed = true;
-        }
-
-        if (changed)
-            RenderChatMessages(force: true);
+            text.SetFont(ChatFontName);
+        RenderChatMessages(force: true);
     }
 
     private static Font GetFont()

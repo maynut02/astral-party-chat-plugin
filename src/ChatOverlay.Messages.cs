@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace AstralPartyChatPlugin;
 
@@ -12,13 +11,19 @@ internal static partial class ChatOverlay
     private const int MaximumDisplayedMessageLength = 1400;
     private const float MinimumMessageRowHeight = 90f;
     private const float MaximumMessageRowHeight = 42000f;
+    private const float MessageTextLeft = 72f;
+    private const float PortraitSize = 60f;
+    private const float RowGap = 6f;
     private const float ChatWheelStep = 100f;
     private const float ChatBottomFollowDistance = 32f;
+    private static readonly Color SenderTextColor = new Color32(145, 145, 145, 255);
     private static List<ChatUiMessage> _messages = new();
-    private static readonly List<RenderedChatRow> RenderedChatRows = new();
+    private static List<string> _messageIdentities = new();
+    private static readonly List<RenderedChatRow> RenderedChatRows = new(MaximumRenderedMessages);
     private static string _renderedPortraitRoomId = string.Empty;
     private static string _renderedPortraitPhase = string.Empty;
     private static float _nextRenderedPortraitRefreshAt;
+    private static bool _messagesPresentationInvalid;
 
     public static void SetChatMessages(IEnumerable<ChatUiMessage> messages)
     {
@@ -37,15 +42,17 @@ internal static partial class ChatOverlay
         }
 
         var next = bounded.ToList();
-        ObserveChatScrollMessages(_messages, next);
+        var nextIdentities = GetChatMessageIdentities(next);
+        ObserveChatScrollMessages(_messageIdentities, nextIdentities);
         _messages = next;
+        _messageIdentities = nextIdentities;
         RenderChatMessages(force: false);
     }
 
     private static List<string> GetChatMessageIdentities(IReadOnlyList<ChatUiMessage> messages)
     {
         var identities = new List<string>(messages.Count);
-        var occurrences = new Dictionary<string, int>(StringComparer.Ordinal);
+        var occurrences = new Dictionary<string, int>(messages.Count, StringComparer.Ordinal);
         foreach (var message in messages)
         {
             var identity = BuildMessageIdentity(message);
@@ -58,21 +65,19 @@ internal static partial class ChatOverlay
     }
 
     private static void ObserveChatScrollMessages(
-        IReadOnlyList<ChatUiMessage> previous,
-        IReadOnlyList<ChatUiMessage> next)
+        List<string> previousIdentities,
+        List<string> nextIdentities)
     {
         ObserveChatScrollConnectionStatus();
-        var nextIdentities = GetChatMessageIdentities(next);
         var present = new HashSet<string>(nextIdentities, StringComparer.Ordinal);
         UnreadChatMessageIdentities.RemoveWhere(identity => !present.Contains(identity));
-        var previousIdentities = GetChatMessageIdentities(previous);
         var tailIndex = previousIdentities.Count == 0
             ? -1 : nextIdentities.LastIndexOf(previousIdentities[previousIdentities.Count - 1]);
 
         // A prepend, replay, echo acknowledgement or participant update is not
         // a new arrival. Only unknown identities after the previous tail count.
         // A non-overlapping replacement establishes a fresh history baseline.
-        if (next.Count == 0 || previous.Count == 0 || tailIndex < 0)
+        if (nextIdentities.Count == 0 || previousIdentities.Count == 0 || tailIndex < 0)
             UnreadChatMessageIdentities.Clear();
         else if (!_chatScrollHistoryPending && !IsChatNearBottom())
         {
@@ -90,179 +95,148 @@ internal static partial class ChatOverlay
 
     private static void RenderChatMessages(bool force)
     {
-        if (_chatContentRect == null)
+        if (_chatContent == null)
             return;
 
-        var nextMessages = _messages.Count <= MaximumRenderedMessages
-            ? _messages
-            : _messages.Skip(_messages.Count - MaximumRenderedMessages).ToList();
         var oldRows = RenderedChatRows.ToArray();
-        var previousContentHeight = _chatContentRect.rect.height;
-        var viewportHeight = GetChatScrollViewportHeight();
         var rowWidth = GetChatMessageRowWidth();
-        var widthChanged = oldRows.Any(row => Math.Abs(row.Rect.rect.width - rowWidth) > 0.5f);
-        var previousScrollable = Math.Max(0f, previousContentHeight - viewportHeight);
-        var wasAtBottom = _chatScrollRect == null
-            || Mathf.Clamp01(_chatScrollRect.verticalNormalizedPosition)
-                * previousScrollable <= ChatBottomFollowDistance
-            || (oldRows.Length == 0 && nextMessages.Count > 0);
-        var previousTopOffset = 0f;
-        if (_chatScrollRect != null)
-        {
-            previousTopOffset = (1f - _chatScrollRect.verticalNormalizedPosition)
-                * previousScrollable;
-        }
+        var widthChanged = oldRows.Any(row => Math.Abs(row.Width - rowWidth) > 0.5f);
+        var wasAtBottom = IsChatNearBottom() || (oldRows.Length == 0 && _messages.Count > 0);
+        var previousTopOffset = _chatScrollTop;
+        var previousAnchorY = oldRows.Length == 0 ? 0f : oldRows[0].Y;
 
-        var available = new Dictionary<string, Queue<RenderedChatRow>>(StringComparer.Ordinal);
+        var available = new Dictionary<string, Queue<RenderedChatRow>>(oldRows.Length, StringComparer.Ordinal);
         foreach (var row in oldRows)
         {
             if (!available.TryGetValue(row.Identity, out var rows))
             {
-                rows = new Queue<RenderedChatRow>();
+                rows = new Queue<RenderedChatRow>(1);
                 available.Add(row.Identity, rows);
             }
             rows.Enqueue(row);
+            if (row.Y <= previousTopOffset)
+                previousAnchorY = row.Y;
         }
 
-        var occurrences = new Dictionary<string, int>(StringComparer.Ordinal);
-        var nextRows = new List<RenderedChatRow>(nextMessages.Count);
-        var retained = new HashSet<RenderedChatRow>();
-        var changed = force || widthChanged || oldRows.Length != nextMessages.Count;
+        var nextRows = new List<RenderedChatRow>(_messages.Count);
+        var retained = new HashSet<RenderedChatRow>(_messages.Count);
+        var changed = force || widthChanged || oldRows.Length != _messages.Count;
+        var textScalePercent = ChatLayout.Percent(_textScale);
+        RenderedChatRow? anchorRow = null;
+        var anchorPreviousY = float.PositiveInfinity;
 
-        foreach (var message in nextMessages)
+        try
         {
-            var identity = BuildMessageIdentity(message);
-            occurrences.TryGetValue(identity, out var occurrence);
-            occurrences[identity] = occurrence + 1;
-            if (occurrence != 0)
-                identity += "\u001e" + occurrence.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-            var renderKey = BuildMessageRenderKey(message, identity);
-            RenderedChatRow row;
-            if (available.TryGetValue(identity, out var matchingRows)
-                && matchingRows.Count > 0)
+            for (var index = 0; index < _messages.Count; index++)
             {
-                var previous = matchingRows.Dequeue();
-                if (string.Equals(previous.RenderKey, renderKey, StringComparison.Ordinal))
-                {
-                    row = previous;
-                }
-                else
-                {
-                    DestroyRenderedRow(previous);
-                    retained.Add(previous);
-                    row = CreateRenderedRow(message, identity, renderKey);
+                var message = _messages[index];
+                var identity = _messageIdentities[index];
+                var renderKey = BuildMessageRenderKey(message, identity, textScalePercent);
+                RenderedChatRow? previous = null;
+                if (available.TryGetValue(identity, out var matchingRows)
+                    && matchingRows.Count > 0)
+                    previous = matchingRows.Dequeue();
+
+                var row = previous != null
+                    && string.Equals(previous.RenderKey, renderKey, StringComparison.Ordinal)
+                    ? previous : CreateRenderedRow(message, identity, renderKey);
+                // Own every completed creation before another row can fail.
+                if (!retained.Add(row))
                     changed = true;
+                nextRows.Add(row);
+                if (!ReferenceEquals(previous, row))
+                    changed = true;
+
+                // Presentation replacement preserves the logical FIFO match.
+                // If the top row was trimmed, use its first surviving successor.
+                if (previous != null && previous.Y >= previousAnchorY && previous.Y < anchorPreviousY)
+                {
+                    anchorRow = row;
+                    anchorPreviousY = previous.Y;
                 }
             }
-            else
+
+            if (!changed && oldRows.Length == nextRows.Count)
             {
-                row = CreateRenderedRow(message, identity, renderKey);
-                changed = true;
+                for (var index = 0; index < oldRows.Length; index++)
+                {
+                    if (ReferenceEquals(oldRows[index], nextRows[index]))
+                        continue;
+
+                    changed = true;
+                    break;
+                }
             }
 
-            if (!retained.Add(row))
-                changed = true;
-            nextRows.Add(row);
+            if (!changed)
+            {
+                RefreshChatScrollControlPresentation();
+                _messagesPresentationInvalid = false;
+                return;
+            }
+
+            var y = RowGap;
+            foreach (var row in nextRows)
+            {
+                if (force || widthChanged)
+                {
+                    MeasureRenderedRow(row);
+                    ApplyCdnPortrait(row);
+                }
+
+                var height = SanitizeRowHeight(row.Height);
+                row.Y = y;
+                row.Root.SetXY(0f, y);
+                row.Root.SetSize(rowWidth, height);
+                y += height + RowGap;
+            }
+
+            var viewportHeight = GetChatScrollViewportHeight();
+            _chatRowsHeight = float.IsFinite(y) ? y + 2f : 0f;
+            _chatContentHeight = Math.Max(viewportHeight, _chatRowsHeight);
+            _chatContent.SetSize(rowWidth, _chatContentHeight);
+
+            RenderedChatRows.Clear();
+            RenderedChatRows.AddRange(nextRows);
+            var anchoredTopOffset = anchorRow == null ? previousTopOffset
+                : anchorRow.Y + (anchorPreviousY == previousAnchorY ? previousTopOffset - anchorPreviousY : 0f);
+            var scrollable = GetChatScrollableHeight();
+            SetChatScrollTop(wasAtBottom || scrollable <= 0.5f ? scrollable : anchoredTopOffset);
+        }
+        catch
+        {
+            _messagesPresentationInvalid = true;
+            // A failed native update can leave both reused and new rows partly
+            // laid out. Drop the whole presentation, but keep messages/identities
+            // so the next refresh or UI creation retry can render the snapshot.
+            RenderedChatRows.Clear();
+            foreach (var row in oldRows)
+            {
+                retained.Remove(row);
+                DestroyRenderedRow(row);
+            }
+            foreach (var row in retained)
+                DestroyRenderedRow(row);
+            _chatScrollTop = 0f;
+            _chatRowsHeight = 0f;
+            _chatContentHeight = 0f;
+            ResetChatScrollDrags();
+            throw;
         }
 
+        // Old rows remain owned until creation, layout and native presentation
+        // all succeed, including rows whose presentation was replaced.
         foreach (var row in oldRows)
-        {
-            if (retained.Contains(row))
-                continue;
-
-            DestroyRenderedRow(row);
-            changed = true;
-        }
-
-        if (!changed && oldRows.Length == nextRows.Count)
-        {
-            for (var index = 0; index < oldRows.Length; index++)
-            {
-                if (ReferenceEquals(oldRows[index], nextRows[index]))
-                    continue;
-
-                changed = true;
-                break;
-            }
-        }
-
-        if (!changed)
-        {
-            RefreshChatScrollControlPresentation();
-            return;
-        }
-
-        var removedAboveViewport = GetRemovedLeadingHeight(oldRows, nextRows);
-        RenderedChatRows.Clear();
-        RenderedChatRows.AddRange(nextRows);
-
-        var y = 6f;
-        for (var index = 0; index < RenderedChatRows.Count; index++)
-        {
-            var row = RenderedChatRows[index];
-            if (force || widthChanged)
-            {
-                MeasureRenderedRow(row);
-                ApplyCdnPortrait(row);
-            }
-
-            var height = SanitizeRowHeight(row.Height);
-            SetTopLeftRect(
-                row.Rect,
-                new Vector2(0f, y),
-                new Vector2(rowWidth, height));
-            row.Root.transform.SetSiblingIndex(index);
-            y += height + 6f;
-        }
-
-        var contentHeight = Math.Max(viewportHeight, y + 2f);
-        if (float.IsNaN(contentHeight) || float.IsInfinity(contentHeight))
-            contentHeight = Math.Max(502f, viewportHeight);
-        _chatContentRect.sizeDelta = new Vector2(0f, contentHeight);
-
-        if (_chatScrollRect != null)
-        {
-            Canvas.ForceUpdateCanvases();
-            var scrollable = Math.Max(0f, contentHeight - viewportHeight);
-            if (wasAtBottom || scrollable <= 0.5f)
-            {
-                _chatScrollRect.verticalNormalizedPosition = 0f;
-            }
-            else
-            {
-                var topOffset = Math.Max(0f, previousTopOffset - removedAboveViewport);
-                _chatScrollRect.verticalNormalizedPosition = Mathf.Clamp01(
-                    1f - (topOffset / scrollable));
-            }
-        }
-        RefreshChatScrollControlPresentation();
+            if (!retained.Contains(row))
+                DestroyRenderedRow(row);
+        _messagesPresentationInvalid = false;
     }
 
-    private static float GetRemovedLeadingHeight(
-        IReadOnlyList<RenderedChatRow> oldRows,
-        IReadOnlyList<RenderedChatRow> nextRows)
+    private static void RefreshChatRowVisibility()
     {
-        if (oldRows.Count == 0 || nextRows.Count == 0)
-            return 0f;
-
-        var firstRetained = -1;
-        for (var index = 0; index < oldRows.Count; index++)
-        {
-            if (nextRows.Contains(oldRows[index]))
-            {
-                firstRetained = index;
-                break;
-            }
-        }
-
-        if (firstRetained <= 0)
-            return 0f;
-
-        var removedHeight = 0f;
-        for (var index = 0; index < firstRetained; index++)
-            removedHeight += SanitizeRowHeight(oldRows[index].Height) + 6f;
-        return removedHeight;
+        var bottom = _chatScrollTop + GetChatScrollViewportHeight();
+        foreach (var row in RenderedChatRows)
+            row.Root.SetVisible(row.Y + row.Height >= _chatScrollTop && row.Y <= bottom);
     }
 
     private static string BuildMessageIdentity(ChatUiMessage message)
@@ -283,7 +257,8 @@ internal static partial class ChatOverlay
 
     private static string BuildMessageRenderKey(
         ChatUiMessage message,
-        string identity)
+        string identity,
+        string textScalePercent)
     {
         return string.Concat(
             identity, "\u001f",
@@ -292,127 +267,70 @@ internal static partial class ChatOverlay
             message.CharacterName ?? string.Empty, "\u001f",
             message.Order ?? string.Empty, "\u001f",
             message.Text ?? string.Empty, "\u001f",
-            message.IsSystem ? "1" : "0");
+            message.IsSystem ? "1" : "0", "\u001f",
+            textScalePercent);
     }
+
+    private static float NameLineHeight => 26f * _textScale;
+    private static float BodyTop => 8f + NameLineHeight + 6f;
 
     private static RenderedChatRow CreateRenderedRow(
         ChatUiMessage message,
         string identity,
         string renderKey)
     {
-        var content = _chatContentRect;
-        if (content == null)
-            throw new InvalidOperationException("Chat message content is unavailable.");
-
+        var content = _chatContent ?? throw new InvalidOperationException("Chat message content is unavailable.");
+        var nodes = new List<FguiNode>();
         var firstTextIndex = _chatTexts.Count;
-        GameObject? root = null;
+        var rowWidth = GetChatMessageRowWidth();
+        FguiNode? root = null;
         try
         {
+            root = AddComponent(content, 0f, 0f, rowWidth, 1f, nodes);
+            root.SetTouchable(false);
             if (message.IsSystem)
             {
-                root = new GameObject("SystemMessageRow");
-                var rootRect = root.AddComponent<RectTransform>();
-                root.transform.SetParent(content, false);
-                var text = CreateUiText(
-                    root.transform,
-                    "SystemMessage",
-                    GetDisplayMessageText(message.Text),
-                    18,
-                    new Color32(175, 175, 175, 255),
-                    TextAnchor.MiddleCenter,
-                    Vector2.zero,
-                    new Vector2(GetChatMessageRowWidth(), 1f));
-                text.supportRichText = false;
-                text.horizontalOverflow = HorizontalWrapMode.Wrap;
-                text.verticalOverflow = VerticalWrapMode.Truncate;
-
-                var row = new RenderedChatRow(
-                    identity,
-                    renderKey,
-                    root,
-                    rootRect,
-                    _chatTexts.Skip(firstTextIndex).ToList(),
-                    null,
-                    null,
-                    string.Empty);
-                MeasureSystemRow(row, text);
-                return row;
+                var text = AddText(root, GetDisplayMessageText(message.Text),
+                    ChatLayout.FontSize(18, _textScale), MutedTextColor, FguiAlign.Center,
+                    0f, 6f, rowWidth, 1f, FguiVerticalAlign.Top, wrap: true, owner: nodes);
+                var system = new RenderedChatRow(identity, renderKey, root, nodes,
+                    _chatTexts.Skip(firstTextIndex).ToList(), text, null, null, null, string.Empty, isSystem: true);
+                MeasureRenderedRow(system);
+                return system;
             }
 
-            root = CreateFlatImage(
-                content,
-                "ChatMessage",
-                new Color32(0, 0, 0, 0),
-                false);
-
-            var portraitObject = new GameObject("CharacterImage");
-            portraitObject.transform.SetParent(root.transform, false);
-            var portrait = portraitObject.AddComponent<RawImage>();
-            portrait.color = Color.white;
-            portrait.raycastTarget = false;
-            portraitObject.SetActive(false);
-            SetTopLeftRect(
-                portraitObject.GetComponent<RectTransform>(),
-                new Vector2(0f, 8f),
-                new Vector2(60f, 60f));
-
-            var participant = CreateUiText(
-                root.transform,
-                "Participant",
+            var portrait = AddLoader(root, 0f, 8f, PortraitSize, nodes);
+            portrait.SetVisible(false);
+            var nameSize = ChatLayout.FontSize(18, _textScale);
+            var participant = AddText(root,
                 BuildParticipantLabel(message.Order, message.CharacterName, message.CharacterId),
-                18,
-                GetOrderTextColor(message.Order),
-                TextAnchor.MiddleLeft,
-                new Vector2(72f, 8f),
-                new Vector2(Math.Max(1f, GetChatMessageRowWidth() - 250f), 26f));
-            participant.supportRichText = false;
+                nameSize, GetOrderTextColor(message.Order), FguiAlign.Left,
+                MessageTextLeft, 8f, Math.Max(1f, rowWidth - 250f), NameLineHeight, owner: nodes);
+            var sender = AddText(root, message.Sender ?? string.Empty, nameSize, SenderTextColor, FguiAlign.Right,
+                Math.Max(MessageTextLeft, rowWidth - 170f), 8f, 170f, NameLineHeight, owner: nodes);
+            var body = AddText(root, GetDisplayMessageText(message.Text),
+                ChatLayout.FontSize(21, _textScale), BodyTextColor, FguiAlign.Left,
+                MessageTextLeft, BodyTop, Math.Max(1f, rowWidth - MessageTextLeft), 1f,
+                FguiVerticalAlign.Top, wrap: true, owner: nodes);
 
-            var sender = CreateUiText(
-                root.transform,
-                "Sender",
-                message.Sender ?? string.Empty,
-                18,
-                new Color32(145, 145, 145, 255),
-                TextAnchor.MiddleRight,
-                new Vector2(Math.Max(72f, GetChatMessageRowWidth() - 170f), 8f),
-                new Vector2(170f, 26f));
-            sender.supportRichText = false;
-
-            var body = CreateUiText(
-                root.transform,
-                "Body",
-                GetDisplayMessageText(message.Text),
-                21,
-                new Color32(235, 235, 235, 255),
-                TextAnchor.UpperLeft,
-                new Vector2(72f, 40f),
-                new Vector2(Math.Max(1f, GetChatMessageRowWidth() - 72f), 1f));
-            body.supportRichText = false;
-            body.horizontalOverflow = HorizontalWrapMode.Wrap;
-            body.verticalOverflow = VerticalWrapMode.Truncate;
-
-            var rendered = new RenderedChatRow(
-                identity,
-                renderKey,
-                root,
-                root.GetComponent<RectTransform>() ?? throw new InvalidOperationException("Chat row requires a RectTransform."),
-                _chatTexts.Skip(firstTextIndex).ToList(),
-                body,
-                portrait,
-                message.CharacterId ?? string.Empty);
-
+            var rendered = new RenderedChatRow(identity, renderKey, root, nodes,
+                _chatTexts.Skip(firstTextIndex).ToList(), body, participant, sender, portrait,
+                message.CharacterId ?? string.Empty, isSystem: false);
             ApplyCdnPortrait(rendered);
-
             MeasureRenderedRow(rendered);
             return rendered;
         }
         catch
         {
-            for (var index = _chatTexts.Count - 1; index >= firstTextIndex; index--)
-                _chatTexts.RemoveAt(index);
-            if (root != null)
+            _chatTexts.RemoveRange(firstTextIndex, _chatTexts.Count - firstTextIndex);
+            // AddComponent can fail after tracking/attaching the root but
+            // before assigning it to the local variable.
+            var rowRoot = root ?? (nodes.Count > 0 ? nodes[0] : null);
+            try { rowRoot?.Dispose(); }
+            catch { }
+            foreach (var node in nodes)
             {
-                try { UnityEngine.Object.Destroy(root); }
+                try { node.ReleaseHandle(); }
                 catch { }
             }
             throw;
@@ -427,9 +345,9 @@ internal static partial class ChatOverlay
         if (row.Portrait == null || !HasCharacterPortrait(row.CharacterId))
             return;
 
-        row.Portrait.texture = texture;
-        row.Portrait.uvRect = new Rect(0f, 0f, 1f, 1f);
-        row.Portrait.gameObject.SetActive(true);
+        row.Portrait.SetTexture(texture);
+        row.Texture = texture;
+        row.Portrait.SetVisible(true);
     }
 
     private static void RefreshRenderedPortraits(ChatSnapshot snapshot)
@@ -470,76 +388,47 @@ internal static partial class ChatOverlay
             }
         }
 
-        row.Portrait.texture = null;
-        row.Portrait.gameObject.SetActive(false);
+        row.Portrait.SetTexture(null);
+        row.Portrait.SetVisible(false);
+        row.Texture = null;
     }
 
     private static void MeasureRenderedRow(RenderedChatRow row)
     {
-        if (row.Body == null)
+        // A previously culled row still needs its text measured after a reflow.
+        // Visibility is reconciled again before this update reaches the screen.
+        row.Root.SetVisible(true);
+        var rowWidth = GetChatMessageRowWidth();
+        row.Width = rowWidth;
+        if (row.IsSystem)
         {
-            var text = row.Texts.Count == 0 ? null : row.Texts[0];
-            if (text != null)
-                MeasureSystemRow(row, text);
+            row.Body.SetSize(rowWidth, 1f);
+            row.Height = Math.Clamp(SanitizeTextHeight(row.Body) + 12f, 50f, MaximumMessageRowHeight);
             return;
         }
 
-        var rowWidth = GetChatMessageRowWidth();
-        var bodyWidth = Math.Max(1f, rowWidth - 72f);
-        row.Body.rectTransform.sizeDelta = new Vector2(bodyWidth, row.Body.rectTransform.sizeDelta.y);
-        foreach (var text in row.Texts)
-        {
-            if (text.gameObject.name == "Participant")
-                SetTopLeftRect(text.rectTransform, new Vector2(72f, 8f),
-                    new Vector2(Math.Max(1f, rowWidth - 250f), 26f));
-            else if (text.gameObject.name == "Sender")
-                SetTopLeftRect(text.rectTransform, new Vector2(Math.Max(72f, rowWidth - 170f), 8f),
-                    new Vector2(170f, 26f));
-        }
-        var preferredHeight = GetPreferredTextHeight(row.Body);
-        var bodyHeight = Mathf.Clamp(
-            preferredHeight,
-            Math.Max(1f, row.Body.fontSize * 1.2f),
-            MaximumMessageRowHeight - 52f);
-        var bodyRect = row.Body.rectTransform;
-        bodyRect.sizeDelta = new Vector2(bodyWidth, bodyHeight);
-        row.Height = Mathf.Clamp(
-            40f + bodyHeight + 12f,
-            MinimumMessageRowHeight,
-            MaximumMessageRowHeight);
+        var bodyWidth = Math.Max(1f, rowWidth - MessageTextLeft);
+        row.Participant?.SetSize(Math.Max(1f, rowWidth - 250f), NameLineHeight);
+        row.Sender?.SetXY(Math.Max(MessageTextLeft, rowWidth - 170f), 8f);
+        row.Body.SetSize(bodyWidth, 1f);
+        var bodyHeight = Math.Clamp(
+            SanitizeTextHeight(row.Body),
+            ChatLayout.FontSize(21, _textScale) * 1.2f,
+            MaximumMessageRowHeight - BodyTop - 12f);
+        row.Height = Math.Clamp(BodyTop + bodyHeight + 12f, MinimumMessageRowHeight, MaximumMessageRowHeight);
     }
 
-    private static void MeasureSystemRow(RenderedChatRow row, Text text)
+    private static float SanitizeTextHeight(FguiNode text)
     {
-        var rowWidth = GetChatMessageRowWidth();
-        text.rectTransform.sizeDelta = new Vector2(rowWidth, text.rectTransform.sizeDelta.y);
-        var preferredHeight = GetPreferredTextHeight(text);
-        var height = Mathf.Clamp(
-            preferredHeight + 12f,
-            50f,
-            MaximumMessageRowHeight);
-        text.rectTransform.sizeDelta = new Vector2(rowWidth, height);
-        row.Height = height;
-    }
-
-    private static float GetPreferredTextHeight(Text text)
-    {
-        try
-        {
-            var preferred = text.preferredHeight;
-            if (!float.IsNaN(preferred) && !float.IsInfinity(preferred) && preferred > 0f)
-                return preferred;
-        }
-        catch { }
-
-        return Math.Max(1f, text.fontSize * 1.25f);
+        var height = text.Height;
+        return float.IsFinite(height) && height > 0f ? height : 26f * _textScale;
     }
 
     private static float SanitizeRowHeight(float height)
     {
-        if (float.IsNaN(height) || float.IsInfinity(height) || height <= 0f)
+        if (!float.IsFinite(height) || height <= 0f)
             return MinimumMessageRowHeight;
-        return Mathf.Clamp(height, 1f, MaximumMessageRowHeight);
+        return Math.Clamp(height, 1f, MaximumMessageRowHeight);
     }
 
     private static void DestroyRenderedRow(RenderedChatRow row)
@@ -547,15 +436,9 @@ internal static partial class ChatOverlay
         foreach (var text in row.Texts)
             _chatTexts.Remove(text);
 
-        try
-        {
-            if (row.Root != null)
-            {
-                row.Root.SetActive(false);
-                UnityEngine.Object.Destroy(row.Root);
-            }
-        }
+        try { row.Root.Dispose(); }
         catch { }
+        row.ReleaseHandles();
     }
 
     private static void RefreshRenderedCharacterImage(string characterId, Texture texture)
@@ -570,9 +453,25 @@ internal static partial class ChatOverlay
         }
     }
 
+    private static void ClearRenderedTexture(Texture texture)
+    {
+        foreach (var row in RenderedChatRows)
+        {
+            if (!ReferenceEquals(row.Texture, texture))
+                continue;
+            row.Portrait?.SetTexture(null);
+            row.Portrait?.SetVisible(false);
+            row.Texture = null;
+        }
+    }
+
     private static void ResetMessagesPresentation()
     {
+        _messagesPresentationInvalid = false;
         UnreadChatMessageIdentities.Clear();
+        _messageIdentities.Clear();
+        foreach (var row in RenderedChatRows)
+            row.ReleaseHandles();
         RenderedChatRows.Clear();
         _chatTexts.Clear();
         _renderedPortraitRoomId = string.Empty;
@@ -610,7 +509,7 @@ internal static partial class ChatOverlay
             "P2" => new Color32(74, 222, 128, 255),
             "P3" => new Color32(96, 165, 250, 255),
             "P4" => new Color32(250, 204, 21, 255),
-            _ => new Color32(175, 175, 175, 255)
+            _ => MutedTextColor
         };
     }
 
@@ -619,31 +518,52 @@ internal static partial class ChatOverlay
         public RenderedChatRow(
             string identity,
             string renderKey,
-            GameObject root,
-            RectTransform rect,
-            List<Text> texts,
-            Text? body,
-            RawImage? portrait,
-            string characterId)
+            FguiNode root,
+            List<FguiNode> nodes,
+            List<FguiNode> texts,
+            FguiNode body,
+            FguiNode? participant,
+            FguiNode? sender,
+            FguiNode? portrait,
+            string characterId,
+            bool isSystem)
         {
             Identity = identity;
             RenderKey = renderKey;
             Root = root;
-            Rect = rect;
+            Nodes = nodes;
             Texts = texts;
             Body = body;
+            Participant = participant;
+            Sender = sender;
             Portrait = portrait;
             CharacterId = PartyProtocol.NormalizeCharacter(characterId);
+            IsSystem = isSystem;
         }
 
         public string Identity { get; }
         public string RenderKey { get; }
-        public GameObject Root { get; }
-        public RectTransform Rect { get; }
-        public List<Text> Texts { get; }
-        public Text? Body { get; }
-        public RawImage? Portrait { get; }
+        public FguiNode Root { get; }
+        public List<FguiNode> Nodes { get; }
+        public List<FguiNode> Texts { get; }
+        public FguiNode Body { get; }
+        public FguiNode? Participant { get; }
+        public FguiNode? Sender { get; }
+        public FguiNode? Portrait { get; }
         public string CharacterId { get; }
+        public bool IsSystem { get; }
+        public float Width { get; set; }
         public float Height { get; set; }
+        public float Y { get; set; }
+        public Texture? Texture { get; set; }
+
+        public void ReleaseHandles()
+        {
+            foreach (var node in Nodes)
+            {
+                try { node.ReleaseHandle(); }
+                catch { }
+            }
+        }
     }
 }

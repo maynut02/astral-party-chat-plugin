@@ -45,28 +45,28 @@ namespace UnityEngine
         public TextureWrapMode wrapMode { get; set; }
         public FilterMode filterMode { get; set; }
     }
-    public readonly record struct Vector2(float x, float y);
-    public readonly record struct Rect(float x, float y, float width, float height);
-    public sealed class Sprite : Object
-    {
-        public Texture2D texture { get; init; } = null!;
-        public static Sprite Create(Texture2D texture, Rect rect, Vector2 pivot, float pixelsPerUnit) => new() { texture = texture };
-    }
     public sealed class Font : Object
     {
         public static Font CreateDynamicFontFromOSFont(string name, int size) => new() { name = name };
     }
     public static class Resources
     {
-        public static T[] FindObjectsOfTypeAll<T>() => Array.Empty<T>();
+        public static UnityEngine.Font[] AvailableFonts { get; set; } = Array.Empty<UnityEngine.Font>();
+        public static T[] FindObjectsOfTypeAll<T>() => AvailableFonts.OfType<T>().ToArray();
         public static T GetBuiltinResource<T>(string name) where T : Object, new() => new() { name = name };
     }
-    public static class Time { public static float realtimeSinceStartup => 0f; }
+    public static class Time { public static float realtimeSinceStartup { get; set; } }
     public static class ImageConversion
     {
         public static bool DecodeSucceeds { get; set; } = true;
+        public static int DecodeCalls { get; set; }
+        public static Texture2D? LastDecodedTexture { get; set; }
+        public static bool LastMarkNonReadable { get; private set; }
         public static bool LoadImage(Texture2D texture, Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<byte> bytes, bool nonReadable)
         {
+            DecodeCalls++;
+            LastDecodedTexture = texture;
+            LastMarkNonReadable = nonReadable;
             if (!DecodeSucceeds) return false;
             texture.width = (int)BinaryPrimitives.ReadUInt32BigEndian(bytes.Value.AsSpan(16, 4));
             texture.height = (int)BinaryPrimitives.ReadUInt32BigEndian(bytes.Value.AsSpan(20, 4));
@@ -75,13 +75,41 @@ namespace UnityEngine
     }
 }
 
-namespace UnityEngine.UI
+namespace AstralPartyChatPlugin
 {
-    public sealed class Text : UnityEngine.Object
+    // The native bridge boundary is simulated; production asset code owns
+    // discovery, lifetime ordering, alias registration, and text refresh.
+    internal sealed class FguiNode
     {
-        public UnityEngine.Font? font { get; set; }
-        public void SetVerticesDirty() { }
-        public void SetLayoutDirty() { }
+        internal sealed record FontRegistration(string Alias, UnityEngine.Font Font)
+        {
+            internal bool Disposed { get; set; }
+            internal bool Unregistered { get; set; }
+        }
+        public static readonly List<FontRegistration> FontRegistrations = new();
+        public static readonly List<UnityEngine.Texture> TextureReleases = new();
+        private static FontRegistration? _registeredFont;
+        public readonly List<string> FontAssignments = new();
+
+        public static void RegisterFont(string alias, UnityEngine.Font font)
+        {
+            var previous = _registeredFont;
+            _registeredFont = new FontRegistration(alias, font);
+            FontRegistrations.Add(_registeredFont);
+            if (previous != null) previous.Disposed = true;
+        }
+
+        public static void ReleaseTexture(UnityEngine.Texture texture) => TextureReleases.Add(texture);
+
+        public static void ShutdownResources()
+        {
+            if (_registeredFont == null) return;
+            _registeredFont.Unregistered = true;
+            _registeredFont.Disposed = true;
+            _registeredFont = null;
+        }
+
+        public void SetFont(string font) => FontAssignments.Add(font);
     }
 }
 

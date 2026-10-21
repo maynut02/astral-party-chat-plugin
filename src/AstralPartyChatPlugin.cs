@@ -52,26 +52,6 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
 
             PatchChatKeyboardInput(_harmony);
 
-            var mousePrefix = typeof(AstralPartyChatPlugin).GetMethod(
-                nameof(InputMouseButtonPrefix),
-                BindingFlags.Static | BindingFlags.NonPublic);
-            if (mousePrefix != null)
-            {
-                foreach (var methodName in new[] { "GetMouseButtonDown", "GetMouseButton" })
-                {
-                    var mouseMethod = typeof(Input).GetMethod(
-                        methodName,
-                        BindingFlags.Public | BindingFlags.Static,
-                        null,
-                        new[] { typeof(int) },
-                        null);
-                    if (mouseMethod != null)
-                        _harmony.Patch(
-                            mouseMethod,
-                            prefix: new HarmonyMethod(mousePrefix));
-                }
-            }
-
             Log.LogInfo("AstralPartyChatPlugin " + PluginVersion + " loaded.");
         }
         catch (Exception ex)
@@ -104,17 +84,6 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
     private static void EventSystemUpdatePrefix()
     {
         _instance?.Tick();
-    }
-
-    private static bool InputMouseButtonPrefix(int button, ref bool __result)
-    {
-        if (button == 0 && ChatOverlay.ShouldBlockRawMouseInput())
-        {
-            __result = false;
-            return false;
-        }
-
-        return true;
     }
 
     private void Tick()

@@ -12,20 +12,20 @@ internal static partial class GameChatRuntime
         lock (Sync)
         {
             _initialized = false;
-            _scanning = false;
-            _nextScanAt = 0f;
             _snapshot = new ChatSnapshot();
             Session.Reset();
-
-            _scanCameras = Array.Empty<Camera>();
+            ReleaseExpressionWindow();
+            _nextExpressionScanAt = 0f;
+            _loggedAnchorPhase = string.Empty;
+            _loggedAnchor = string.Empty;
 
             WarningNextAt.Clear();
 
             NativeData.Clear();
+            FairyGui.Clear();
             _gameState = GameStateReader.Pending();
             _nextGameDataAt = 0f;
 
-            _findObjectsOfTypeAll = null;
             _log = null;
         }
     }

@@ -14,6 +14,10 @@
     <Compile Include="ScrollControlsTests.cs" />
     <Compile Include="KeyboardInputTests.cs" />
     <Compile Include="PortraitStateTests.cs" />
+    <Compile Include="WindowSettingsTests.cs" />
+    <Compile Include="../../src/ChatOverlay.cs" Link="ChatOverlay.cs" />
+    <Compile Include="../../src/ChatOverlay.Settings.cs" Link="ChatOverlay.Settings.cs" />
+    <Compile Include="../../src/ChatLayout.cs" Link="ChatLayout.cs" />
     <Compile Include="../../src/ChatOverlay.Input.cs" Link="ChatOverlay.Input.cs" />
     <Compile Include="../../src/AstralPartyChatPlugin.Input.cs" Link="AstralPartyChatPlugin.Input.cs" />
     <Compile Include="../../src/ChatInputSubmitState.cs" Link="ChatInputSubmitState.cs" />

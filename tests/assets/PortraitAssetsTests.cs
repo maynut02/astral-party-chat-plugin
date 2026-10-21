@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace AstralPartyChatPlugin;
 
@@ -8,11 +7,17 @@ internal static class AstralPartyChatPlugin { public const string PluginVersion 
 
 internal static partial class ChatOverlay
 {
-    private static readonly List<Text> _chatTexts = new();
+    private static readonly List<FguiNode> _chatTexts = new();
     private static readonly Dictionary<string, Texture> PublishedTextures = new();
+    private static readonly List<bool> RenderRequests = new();
     private static bool HasCharacterPortrait(string? id) => PartyProtocol.NormalizeCharacter(id) is not ("spectator" or "unselected");
     private static void RefreshRenderedCharacterImage(string id, Texture texture) => PublishedTextures[id] = texture;
-    private static void RenderChatMessages(bool force) { }
+    private static void ClearRenderedTexture(Texture texture)
+    {
+        foreach (var id in PublishedTextures.Where(pair => ReferenceEquals(pair.Value, texture)).Select(pair => pair.Key).ToArray())
+            PublishedTextures.Remove(id);
+    }
+    private static void RenderChatMessages(bool force) => RenderRequests.Add(force);
 
     private static byte[] PngHeader()
     {
@@ -43,7 +48,15 @@ internal static partial class ChatOverlay
     {
         ShutdownAssets();
         PublishedTextures.Clear();
+        _chatTexts.Clear();
+        RenderRequests.Clear();
+        FguiNode.FontRegistrations.Clear();
+        FguiNode.TextureReleases.Clear();
+        Resources.AvailableFonts = Array.Empty<Font>();
+        Time.realtimeSinceStartup = 0f;
         ImageConversion.DecodeSucceeds = true;
+        ImageConversion.DecodeCalls = 0;
+        ImageConversion.LastDecodedTexture = null;
         EnsureAssetsRunning();
     }
 
@@ -63,7 +76,7 @@ internal static partial class ChatOverlay
                     Require(!TryReserveCharacterImageRequest("101", out _, out _), "Scene change redownloaded a valid texture.");
                 }
                 Require(gameOwned.IsDestroyed, "Unused-asset simulation did not run.");
-                Require(OwnedUnityResources.Count == 1, "Portrait should own only its displayed texture, not an unused Sprite.");
+                Require(OwnedUnityResources.Count == 1, "Portrait should own only its displayed texture.");
             }),
             ("destroyed native cache entries can be requested and displayed again", () =>
             {
@@ -74,6 +87,8 @@ internal static partial class ChatOverlay
                 // without requiring the lookup/render path to run beforehand.
                 Require(TryReserveCharacterImageRequest("101", out var generation, out _), "Dead cache blocked redownload forever.");
                 Require(!TryGetCharacterTexture("101", out var missing) && ReferenceEquals(missing, null), "Dead wrapper escaped lookup.");
+                Require(FguiNode.TextureReleases.Any(texture => ReferenceEquals(texture, old)), "Dead texture's native wrapper was retained.");
+                Require(!PublishedTextures.Values.Any(texture => ReferenceEquals(texture, old)), "Loader retained the released native wrapper.");
                 Require(!TryReserveCharacterImageRequest("101", out _, out _), "Duplicate pending download was allowed.");
                 CharacterImageReady.Enqueue(new CharacterImagePayload("101", generation, PngHeader()));
                 ProcessCharacterImageDownloads();
@@ -87,6 +102,8 @@ internal static partial class ChatOverlay
                 var gameOwned = new Texture2D(2, 2, TextureFormat.RGBA32, false);
                 ShutdownAssets();
                 Require(portrait.IsDestroyed && !gameOwned.IsDestroyed, "Shutdown affected wrong resources.");
+                Require(CharacterImageRequested.Count == 0 && CharacterImageRetryAfter.Count == 0 && CharacterImageReady.Count == 0,
+                    "Shutdown retained pending portrait state.");
                 Require(CharacterImageTextures.Count == 0 && OwnedUnityResources.Count == 0, "Shutdown retained cache/resources.");
                 Require(!TryReserveCharacterImageRequest("101", out _, out _), "Shutdown allowed another request.");
             }),
@@ -109,19 +126,98 @@ internal static partial class ChatOverlay
                 CharacterImageReady.Enqueue(new CharacterImagePayload("101", generation, PngHeader()));
                 ProcessCharacterImageDownloads();
                 Require(OwnedUnityResources.Count == 0 && !TryGetCharacterTexture("101", out _), "Failed decode leaked or cached a texture.");
+                Require(ImageConversion.LastDecodedTexture is { IsDestroyed: true }, "Failed decode did not destroy its native texture.");
                 Require(!CharacterImageRequested.ContainsKey("101") && !TryReserveCharacterImageRequest("101", out _, out _), "Failed decode bypassed cooldown.");
                 CharacterImageRetryAfter["101"] = DateTime.UtcNow.AddSeconds(-1);
                 ImageConversion.DecodeSucceeds = true;
                 DecodePortrait("101");
             }),
-            ("generated UI sprites are protected and explicitly released", () =>
+            ("portrait decoding is limited to two payloads per frame", () =>
             {
-                var texture = TrackOwnedUnityResource(new Texture2D(2, 2, TextureFormat.RGBA32, false));
-                var sprite = CreateOwnedSprite(texture, new Rect(0, 0, 2, 2), new Vector2(0.5f, 0.5f), 100f);
+                foreach (var id in new[] { "101", "102", "103" })
+                {
+                    Require(TryReserveCharacterImageRequest(id, out var generation, out _), "Request could not be reserved.");
+                    CharacterImageReady.Enqueue(new CharacterImagePayload(id, generation, PngHeader()));
+                }
+                ProcessCharacterImageDownloads();
+                Require(ImageConversion.DecodeCalls == 2 && CharacterImageReady.Count == 1, "First frame exceeded the decode budget.");
+                Require(PublishedTextures.Count == 2 && CharacterImageRequested.ContainsKey("103"), "Queued portrait was published or released early.");
+                ProcessCharacterImageDownloads();
+                Require(ImageConversion.DecodeCalls == 3 && CharacterImageReady.Count == 0, "Second frame did not finish the queue.");
+                Require(PublishedTextures.Count == 3 && CharacterImageRequested.Count == 0, "Successful portraits retained pending requests.");
+                Require(ImageConversion.LastMarkNonReadable, "Portrait decoding retained unnecessary CPU-readable pixels.");
+            }),
+            ("invalid portrait headers are rejected before native decoding", () =>
+            {
+                Require(TryReserveCharacterImageRequest("101", out var generation, out _), "Initial request missing.");
+                var bytes = PngHeader();
+                BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(16, 4), (uint)RemotePayload.MaxPortraitDimension + 1);
+                CharacterImageReady.Enqueue(new CharacterImagePayload("101", generation, bytes));
+                ProcessCharacterImageDownloads();
+                Require(ImageConversion.DecodeCalls == 0 && OwnedUnityResources.Count == 0, "Rejected portrait reached the native decoder.");
+                Require(!TryGetCharacterTexture("101", out _) && PublishedTextures.Count == 0, "Rejected portrait was published.");
+                Require(!CharacterImageRequested.ContainsKey("101") && !TryReserveCharacterImageRequest("101", out _, out _),
+                    "Rejected portrait bypassed retry cooldown.");
+            }),
+            ("fallback chat font is registered once and released on shutdown", () =>
+            {
+                RefreshChatFont();
+                Require(FguiNode.FontRegistrations.Count == 1, "Fallback font alias was not registered.");
+                var registration = FguiNode.FontRegistrations[0];
+                Require(registration.Alias == ChatFontName && registration.Font.name == "Malgun Gothic", "Wrong fallback font or alias.");
+                Require(ReferenceEquals(registration.Font, _appliedChatFont), "Registered font was not applied.");
                 UnityEngine.Object.UnloadUnusedAssets();
-                Require(texture != null && sprite != null, "Generated UI assets were unloaded.");
+                Require(!registration.Font.IsDestroyed, "Fallback font did not survive scene cleanup.");
+                RefreshChatFont();
+                Require(FguiNode.FontRegistrations.Count == 1, "Unchanged fallback font was registered again.");
                 ShutdownAssets();
-                Require(texture!.IsDestroyed && sprite!.IsDestroyed, "Protected UI assets were leaked.");
+                Require(registration.Font.IsDestroyed && _font == null && _appliedChatFont == null, "Shutdown retained fallback font state.");
+                Require(registration.Disposed && registration.Unregistered, "Shutdown retained the registered native font.");
+            }),
+            ("preferred game font rebinds retained FairyGUI text and rerenders", () =>
+            {
+                RefreshChatFont();
+                var fallback = FguiNode.FontRegistrations[0].Font;
+                var body = new FguiNode();
+                var input = new FguiNode();
+                _chatTexts.Add(body);
+                _chatTexts.Add(input);
+                var preferred = new Font { name = PreferredChatFontName };
+                Resources.AvailableFonts = new[] { new Font { name = "Other" }, preferred };
+                RefreshGameKoreanFont();
+                Require(FguiNode.FontRegistrations.Count == 1 && RenderRequests.Count == 0, "Font lookup ignored its retry interval.");
+                Time.realtimeSinceStartup = 5f;
+                RefreshGameKoreanFont();
+                Require(FguiNode.FontRegistrations.Count == 2, "Preferred font was not registered.");
+                var registration = FguiNode.FontRegistrations[1];
+                Require(registration.Alias == ChatFontName && ReferenceEquals(registration.Font, preferred), "Wrong preferred font alias.");
+                Require(FguiNode.FontRegistrations[0].Disposed && !FguiNode.FontRegistrations[0].Unregistered,
+                    "Replacement must dispose the previous native font without unregistering the new alias.");
+                Require(body.FontAssignments.SequenceEqual(new[] { ChatFontName }) && input.FontAssignments.SequenceEqual(new[] { ChatFontName }),
+                    "Retained text did not resolve the replacement font.");
+                Require(RenderRequests.SequenceEqual(new[] { true }), "Font replacement did not force message remeasurement.");
+                RefreshGameKoreanFont();
+                Require(FguiNode.FontRegistrations.Count == 2 && RenderRequests.Count == 1 && body.FontAssignments.Count == 1 && input.FontAssignments.Count == 1,
+                    "Unchanged preferred font refreshed retained rows again.");
+                ShutdownAssets();
+                Require(fallback.IsDestroyed && !preferred.IsDestroyed, "Font shutdown destroyed a game-owned font or leaked the fallback.");
+                Require(registration.Disposed && registration.Unregistered, "Shutdown retained the replacement native font.");
+            }),
+            ("embedded messages icon is decoded once and explicitly released", () =>
+            {
+                var texture = GetChatIconTexture();
+                Require(texture.width == 96 && texture.height == 96, "Embedded messages icon dimensions changed.");
+                Require(texture.name == "AstralPartyChatPluginMessagesIcon" && texture.wrapMode == TextureWrapMode.Clamp
+                    && texture.filterMode == FilterMode.Bilinear, "Messages icon texture settings were not applied.");
+                Require(ImageConversion.DecodeCalls == 1 && ImageConversion.LastMarkNonReadable, "Messages icon was not decoded as non-readable.");
+                UnityEngine.Object.UnloadUnusedAssets();
+                Require(!texture.IsDestroyed && ReferenceEquals(GetChatIconTexture(), texture), "Messages icon was unloaded or recreated.");
+                Require(ImageConversion.DecodeCalls == 1 && OwnedUnityResources.Count == 1, "Cached messages icon was decoded or owned twice.");
+                ShutdownAssets();
+                Require(texture.IsDestroyed && _chatIconTexture == null, "Shutdown leaked the embedded messages icon.");
+                EnsureAssetsRunning();
+                var replacement = GetChatIconTexture();
+                Require(!ReferenceEquals(texture, replacement) && ImageConversion.DecodeCalls == 2, "Restart reused the destroyed messages icon.");
             })
         };
         foreach (var (name, run) in checks)

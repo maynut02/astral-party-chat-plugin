@@ -1,584 +1,409 @@
-#if OVERLAY_HARNESS
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using AstralPartyChatPlugin;
 using UnityEngine;
-using UnityEngine.UI;
-using UnityObject = UnityEngine.Object;
 
-internal static class OverlayTests
+internal static class Check
 {
-    private static int _passed;
+    internal static int Passed { get; private set; }
     private static int _assertions;
-
-    private static int Main()
-    {
-        Run("300-row shift retains rows and releases only the dropped texts", ShiftRetainsRowsAndBoundsTextReferences);
-        Run("optimistic acknowledgement keeps the rendered row", OptimisticAcknowledgementKeepsIdentity);
-        Run("participant metadata change replaces only its row", ParticipantChangeReplacesOnlyAffectedRow);
-        Run("row height follows measured multiline preferred height", MultilineUsesPreferredHeight);
-        Run("trim preserves the reader's top offset", TrimPreservesScrollOffset);
-        Run("non-battle CDN retry updates a portrait in place", NonBattleCdnRetryUpdatesInPlace);
-        Run("stale portraits clear before the exact-ID CDN image arrives in every phase", StalePortraitIsClearedBeforeCdnArrival);
-        Run("display truncation counts Unicode code points", DisplayTruncationUsesUnicodeCodePoints);
-        Run("Enter and send button reject over-limit drafts without changing text", OverLimitDraftIsPreserved);
-        Run("1000 code points send intact through Enter and the send button", CodePointBoundarySendsIntact);
-        Run("draft feedback survives connection status updates and clears on correction", DraftFeedbackFollowsEditing);
-        Run("unchanged spaced Unicode drafts avoid repeated validation allocations", UnchangedDraftAvoidsValidationAllocations);
-        Run("explicit IME send validates only the final committed draft", ImeSendValidatesCommittedDraft);
-        Run("one IME Enter waits for committed text and sends once", ImeEnterSendsCommittedText);
-        Run("wheel moves the same UI distance for short and long histories", WheelDistanceDoesNotDependOnHistory);
-        Run("wheel handles fractions, boundaries, empty content and pointer location", WheelRespectsBoundsAndViewport);
-        Run("bottom following uses a 32 UI-unit distance for any history length", BottomFollowingUsesDistance);
-        Run("non-overflowing history follows the bottom when it begins overflowing", NonOverflowingHistoryFollowsBottom);
-
-        Console.WriteLine($"{_passed} overlay regression checks passed ({_assertions} assertions).");
-        ScrollControlsTests.Run();
-        KeyboardInputTests.Run();
-        PortraitStateTests.Run();
-        return 0;
-    }
-
-    private static void Run(string name, Action test)
+    internal static void Run(string name, Action test)
     {
         try
         {
             test();
-            _passed++;
-            Console.WriteLine($"PASS {name}");
+            Passed++;
+            Console.WriteLine("PASS " + name);
         }
-        catch (Exception exception)
+        catch (Exception error)
         {
-            Console.Error.WriteLine($"FAIL {name}: {exception.Message}");
-            Environment.ExitCode = 1;
+            Console.Error.WriteLine("FAIL " + name + ": " + error.Message);
             throw;
         }
     }
-
-    private static void ShiftRetainsRowsAndBoundsTextReferences()
-    {
-        ChatOverlay.ResetHarness();
-        ChatOverlay.SetChatMessages(Enumerable.Range(0, 300).Select(CreateMessage));
-
-        var oldRows = ChatOverlay.InspectRows();
-        var oldTexts = ChatOverlay.InspectChatTexts();
-        var destroyedBefore = UnityObject.DestroyCallCount;
-        var droppedTexts = new HashSet<Text>(oldRows[0].Texts, ReferenceComparer<Text>.Instance);
-        var retainedTexts = new HashSet<Text>(
-            oldRows.Skip(1).SelectMany(row => row.Texts),
-            ReferenceComparer<Text>.Instance);
-
-        ChatOverlay.SetChatMessages(Enumerable.Range(1, 300).Select(CreateMessage));
-
-        var nextRows = ChatOverlay.InspectRows();
-        var nextTexts = new HashSet<Text>(
-            ChatOverlay.InspectChatTexts(),
-            ReferenceComparer<Text>.Instance);
-        Equal(300, nextRows.Count, "rendered row count");
-        Equal(1, UnityObject.DestroyCallCount - destroyedBefore, "destroy calls");
-        for (var index = 1; index < oldRows.Count; index++)
-            Same(oldRows[index].Root, nextRows[index - 1].Root, $"retained row {index}");
-
-        Equal(900, nextTexts.Count, "bounded tracked text count");
-        True(droppedTexts.All(text => !nextTexts.Contains(text)), "dropped row texts were retained");
-        True(retainedTexts.All(nextTexts.Contains), "a retained row text reference was removed");
-        Equal(897, oldTexts.Count(text => nextTexts.Contains(text)), "retained old text references");
-    }
-
-    private static void OptimisticAcknowledgementKeepsIdentity()
-    {
-        ChatOverlay.ResetHarness();
-        var optimistic = new ChatUiMessage
-        {
-            ClientMessageId = "client-ack-1",
-            Sender = "Mina",
-            CharacterId = "101",
-            CharacterName = "Character",
-            Order = "P1",
-            Text = "hello"
-        };
-        ChatOverlay.SetChatMessages(new[] { optimistic });
-        var before = ChatOverlay.InspectRows().Single();
-        var createdBefore = GameObject.CreatedCount;
-        var destroyedBefore = UnityObject.DestroyCallCount;
-
-        ChatOverlay.SetChatMessages(new[]
-        {
-            new ChatUiMessage
-            {
-                Id = "server-ack-1",
-                ClientMessageId = "client-ack-1",
-                Sender = "Mina",
-                CharacterId = "101",
-                CharacterName = "Character",
-                Order = "P1",
-                Text = "hello"
-            }
-        });
-
-        var after = ChatOverlay.InspectRows().Single();
-        Same(before.Root, after.Root, "acknowledged row GameObject");
-        Equal(before.Identity, after.Identity, "identity");
-        Equal(before.RenderKey, after.RenderKey, "render key");
-        Equal(createdBefore, GameObject.CreatedCount, "created objects");
-        Equal(destroyedBefore, UnityObject.DestroyCallCount, "destroy calls");
-    }
-
-    private static void ParticipantChangeReplacesOnlyAffectedRow()
-    {
-        ChatOverlay.ResetHarness();
-        ChatOverlay.SetChatMessages(new[]
-        {
-            new ChatUiMessage
-            {
-                ClientMessageId = "participant-change",
-                ParticipantId = "participant-old",
-                Sender = "Mina",
-                CharacterId = "101",
-                CharacterName = "First",
-                Order = "P1",
-                Text = "same message"
-            },
-            CreateMessage(2)
-        });
-        var before = ChatOverlay.InspectRows();
-        var destroyedBefore = UnityObject.DestroyCallCount;
-
-        ChatOverlay.SetChatMessages(new[]
-        {
-            new ChatUiMessage
-            {
-                ClientMessageId = "participant-change",
-                ParticipantId = "participant-new",
-                Sender = "Mina",
-                CharacterId = "102",
-                CharacterName = "Second",
-                Order = "P2",
-                Text = "same message"
-            },
-            CreateMessage(2)
-        });
-
-        var after = ChatOverlay.InspectRows();
-        NotSame(before[0].Root, after[0].Root, "changed participant row");
-        Same(before[1].Root, after[1].Root, "unaffected row");
-        Equal(before[0].Identity, after[0].Identity, "changed row identity");
-        True(before[0].RenderKey != after[0].RenderKey, "changed participant render key");
-        Equal(1, UnityObject.DestroyCallCount - destroyedBefore, "destroy calls");
-        Equal(6, ChatOverlay.InspectChatTexts().Count, "tracked text count");
-    }
-
-    private static void MultilineUsesPreferredHeight()
-    {
-        ChatOverlay.ResetHarness();
-        ChatOverlay.SetChatMessages(new[]
-        {
-            new ChatUiMessage { Id = "sized-row", Sender = "Mina", Text = "short" }
-        });
-        var shortRow = ChatOverlay.InspectRows().Single();
-        var shortPreferred = shortRow.Body!.preferredHeight;
-        var readsBefore = Text.PreferredHeightReadCount;
-
-        var multiline = string.Join("\n", Enumerable.Repeat("measured line", 12));
-        ChatOverlay.SetChatMessages(new[]
-        {
-            new ChatUiMessage { Id = "sized-row", Sender = "Mina", Text = multiline }
-        });
-
-        var longRow = ChatOverlay.InspectRows().Single();
-        var measured = longRow.Body!.preferredHeight;
-        True(measured > shortPreferred, "multiline preferred height did not grow");
-        Equal(readsBefore + 2, Text.PreferredHeightReadCount, "preferredHeight reads (one inspect, one render)");
-        Near(measured, longRow.Body.rectTransform.rect.height, 0.01f, "body measured height");
-        Near(40f + measured + 12f, longRow.Height, 0.01f, "row measured height");
-    }
-
-    private static void TrimPreservesScrollOffset()
-    {
-        ChatOverlay.ResetHarness();
-        ChatOverlay.SetViewportHeight(502f);
-        ChatOverlay.SetChatMessages(Enumerable.Range(0, 300).Select(CreateMessage));
-        var contentBefore = ChatOverlay.GetContentHeight();
-        var scrollableBefore = contentBefore - 502f;
-        const float topOffsetBefore = 5000f;
-        ChatOverlay.SetScrollPosition(1f - topOffsetBefore / scrollableBefore);
-
-        ChatOverlay.SetChatMessages(Enumerable.Range(1, 300).Select(CreateMessage));
-
-        var contentAfter = ChatOverlay.GetContentHeight();
-        var actualTopOffset = (1f - ChatOverlay.GetScrollPosition()) * (contentAfter - 502f);
-        Near(topOffsetBefore - 96f, actualTopOffset, 0.1f, "top offset after removing a 90px row and gap");
-    }
-
-    private static void NonBattleCdnRetryUpdatesInPlace()
-    {
-        ChatOverlay.ResetHarness();
-        ChatOverlay.SetChatMessages(new[]
-        {
-            new ChatUiMessage
-            {
-                Id = "cdn-row",
-                Sender = "Mina",
-                CharacterId = "101",
-                CharacterName = "Character",
-                Text = "portrait pending"
-            }
-        });
-        var row = ChatOverlay.InspectRows().Single();
-        var portrait = row.Portrait!;
-        var snapshot = new ChatSnapshot { RoomId = "123456", ScreenPhase = "방" };
-        Time.unscaledTime = 0f;
-        ChatOverlay.RefreshPortraitsForTest(snapshot);
-        True(!portrait.gameObject.activeSelf && portrait.texture == null, "portrait should begin missing");
-        var createdBeforeRefresh = GameObject.CreatedCount;
-        var destroyedBeforeRefresh = UnityObject.DestroyCallCount;
-
-        var texture = new Texture();
-        ChatOverlay.SetCdnSprite("101", new Sprite(texture));
-        Time.unscaledTime = 3f;
-        ChatOverlay.RefreshPortraitsForTest(snapshot);
-
-        Same(row.Root, ChatOverlay.InspectRows().Single().Root, "row after portrait retry");
-        Same(texture, portrait.texture!, "refreshed portrait texture");
-        True(portrait.gameObject.activeSelf, "refreshed portrait visibility");
-        Equal(createdBeforeRefresh, GameObject.CreatedCount, "objects created by portrait refresh");
-        Equal(destroyedBeforeRefresh, UnityObject.DestroyCallCount, "objects destroyed by portrait refresh");
-    }
-
-    private static void StalePortraitIsClearedBeforeCdnArrival()
-    {
-        foreach (var phase in new[] { "방", "캐릭터 선택", "플레이" })
-        {
-            ChatOverlay.ResetHarness();
-            ChatOverlay.SetChatMessages(new[]
-            {
-                new ChatUiMessage { Id = "exact-id-portrait", Sender = "Mina", CharacterId = "101", Text = "portrait" }
-            });
-            var row = ChatOverlay.InspectRows().Single();
-            var staleTexture = new Texture();
-            row.Portrait!.texture = staleTexture;
-            row.Portrait.uvRect = new Rect(0.2f, 0.3f, 0.4f, 0.5f);
-            row.Portrait.gameObject.SetActive(true);
-            var snapshot = new ChatSnapshot { RoomId = "123456", ScreenPhase = phase };
-            ChatOverlay.RefreshPortraitsForTest(snapshot);
-            True(row.Portrait.texture == null && !row.Portrait.gameObject.activeSelf, "stale portrait hidden while CDN is pending");
-            True(!staleTexture.IsDestroyed, "unowned game texture is not destroyed");
-
-            var cdnTexture = new Texture();
-            ChatOverlay.SetCdnSprite("101", new Sprite(cdnTexture));
-            Time.unscaledTime = 3f;
-            ChatOverlay.RefreshPortraitsForTest(snapshot);
-            Same(row.Root, ChatOverlay.InspectRows().Single().Root, "CDN arrival reuses row");
-            Same(cdnTexture, row.Portrait.texture!, "exact-ID CDN texture");
-            True(row.Portrait.gameObject.activeSelf, "CDN portrait visible");
-            Near(0f, row.Portrait.uvRect.x, 0.001f, "CDN UV origin X");
-            Near(0f, row.Portrait.uvRect.y, 0.001f, "CDN UV origin Y");
-            Near(1f, row.Portrait.uvRect.width, 0.001f, "CDN full UV width");
-            Near(1f, row.Portrait.uvRect.height, 0.001f, "CDN full UV height");
-
-            // Even a live-looking stale texture must be corrected on a later
-            // refresh within the same room and phase, or on a layout reflow.
-            row.Portrait.texture = staleTexture;
-            Time.unscaledTime = 6f;
-            ChatOverlay.RefreshPortraitsForTest(snapshot);
-            Same(cdnTexture, row.Portrait.texture!, "same-context refresh replaces stale texture");
-            row.Portrait.texture = staleTexture;
-            ChatOverlay.RenderMessagesForTest();
-            Same(cdnTexture, row.Portrait.texture!, "retained-row reflow replaces stale texture");
-        }
-    }
-
-    private static void DisplayTruncationUsesUnicodeCodePoints()
-    {
-        ChatOverlay.ResetHarness();
-        var text = string.Concat(Enumerable.Repeat("😀", 1401));
-        ChatOverlay.SetChatMessages(new[]
-        {
-            new ChatUiMessage { Id = "unicode-row", Sender = "Mina", Text = text }
-        });
-
-        var displayed = ChatOverlay.InspectRows().Single().Body!.text;
-        Equal(1400, PartyProtocol.TextLength(displayed), "displayed rune count including ellipsis");
-        Equal(1399, PartyProtocol.TextLength(displayed[..^1]), "truncated message rune count");
-        True(displayed.EndsWith("…", StringComparison.Ordinal), "truncation marker");
-        True(char.IsHighSurrogate(displayed[^3]) && char.IsLowSurrogate(displayed[^2]), "last emoji was split");
-    }
-
-    private static void RequestSubmit(bool useButton)
-    {
-        if (useButton)
-            ChatOverlay.ClickSendForTest();
-        else
-            ChatOverlay.TickInputForTest(KeyCode.Return);
-        ChatOverlay.TickInputForTest();
-    }
-
-    private static void OverLimitDraftIsPreserved()
-    {
-        foreach (var useButton in new[] { false, true })
-        foreach (var draft in new[] { new string('가', 1500), string.Concat(Enumerable.Repeat("😀", 999)) + "ab" })
-        {
-            ChatOverlay.ResetHarness();
-            ChatOverlay.SetDraft(draft);
-            var writesBefore = ChatOverlay.GetDraftWriteCount();
-            RequestSubmit(useButton);
-
-            True(!ChatOverlay.TryDequeueOutgoing(out _), "over-limit draft was queued");
-            Equal(draft, ChatOverlay.GetDraft(), "preserved draft");
-            Equal(writesBefore, ChatOverlay.GetDraftWriteCount(), "writes to rejected draft");
-            True(!ChatOverlay.GetStatusText().Contains("/1000"), "header retained the character counter");
-            True(ChatOverlay.GetStatusText().Contains("초과"), "missing Korean validation feedback");
-            ChatOverlay.TickInputForTest();
-            True(!ChatOverlay.TryDequeueOutgoing(out _), "rejected submit was repeated");
-        }
-    }
-
-    private static void CodePointBoundarySendsIntact()
-    {
-        foreach (var useButton in new[] { false, true })
-        foreach (var draft in new[] { new string('가', 1000), string.Concat(Enumerable.Repeat("😀", 1000)) })
-        {
-            ChatOverlay.ResetHarness();
-            ChatOverlay.SetDraft(draft);
-            ChatOverlay.TickInputForTest();
-            Equal("연결됨", ChatOverlay.GetStatusText(), "valid draft header");
-            RequestSubmit(useButton);
-
-            True(ChatOverlay.TryDequeueOutgoing(out var sent), "valid boundary draft did not send");
-            Equal(draft, sent, "boundary payload");
-            Equal(string.Empty, ChatOverlay.GetDraft(), "draft after accepted send");
-            Equal("연결됨", ChatOverlay.GetStatusText(), "header after accepted send");
-            ChatOverlay.TickInputForTest();
-            True(!ChatOverlay.TryDequeueOutgoing(out _), "accepted submit was repeated");
-        }
-    }
-
-    private static void DraftFeedbackFollowsEditing()
-    {
-        ChatOverlay.ResetHarness();
-        ChatOverlay.SetDraft(new string('a', 1001));
-        RequestSubmit(useButton: true);
-        ChatOverlay.SetChatStatus("재연결 중");
-        Equal("입력 길이 초과: 내용을 줄여주세요.", ChatOverlay.GetStatusText(), "connection status hid validation feedback");
-        ChatOverlay.TickInputForTest();
-        True(ChatOverlay.GetStatusText().Contains("초과"), "frame refresh hid validation feedback");
-
-        ChatOverlay.SetDraft("  안녕😀  ");
-        ChatOverlay.TickInputForTest();
-        Equal("재연결 중", ChatOverlay.GetStatusText(), "feedback after correction");
-        Equal("  안녕😀  ", ChatOverlay.GetDraft(), "editing was normalized before send");
-        True(!ChatOverlay.TryDequeueOutgoing(out _), "correcting the draft retriggered a rejected submit");
-        RequestSubmit(useButton: false);
-        True(ChatOverlay.TryDequeueOutgoing(out var sent), "corrected draft did not send");
-        Equal("안녕😀", sent, "existing trimming on accepted send");
-        ChatOverlay.SetChatStatus("연결됨");
-        Equal("연결됨", ChatOverlay.GetStatusText(), "latest connection status after send");
-    }
-
-    private static void UnchangedDraftAvoidsValidationAllocations()
-    {
-        ChatOverlay.ResetHarness();
-        var draft = "  " + string.Concat(Enumerable.Repeat("😀", 1000)) + "  ";
-        ChatOverlay.SetDraft(draft);
-        for (var i = 0; i < 10; i++) ChatOverlay.RefreshInputStatusForTest();
-        var writesBefore = ChatOverlay.GetDraftWriteCount();
-        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 1000; i++) ChatOverlay.RefreshInputStatusForTest();
-        var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
-        True(allocated < 1024, $"unchanged draft validation allocated {allocated} bytes");
-        ChatOverlay.SetChatStatus("재연결 중");
-        Equal("재연결 중", ChatOverlay.GetStatusText(), "cached draft hid a connection status change");
-        Equal(draft, ChatOverlay.GetDraft(), "validation changed the draft");
-        Equal(writesBefore, ChatOverlay.GetDraftWriteCount(), "validation rewrote the draft");
-    }
-
-    private static void ImeSendValidatesCommittedDraft()
-    {
-        foreach (var finalLength in new[] { 1000, 1001 })
-        {
-            ChatOverlay.ResetHarness();
-            ChatOverlay.SetDraft(new string('가', 999));
-            Input.compositionString = "나";
-            ChatOverlay.TickInputForTest();
-            Equal("연결됨", ChatOverlay.GetStatusText(), "header during composition");
-            ChatOverlay.ClickSendForTest();
-            var writesBefore = ChatOverlay.GetDraftWriteCount();
-            ChatOverlay.TickInputForTest();
-            True(!ChatOverlay.TryDequeueOutgoing(out _), "send ran during composition");
-            Equal(writesBefore, ChatOverlay.GetDraftWriteCount(), "composition draft was rewritten");
-            Equal("나", Input.compositionString, "IME composition was changed");
-
-            var committed = new string('가', finalLength);
-            ChatOverlay.SetDraft(committed);
-            Input.compositionString = string.Empty;
-            ChatOverlay.TickInputForTest();
-            True(!ChatOverlay.TryDequeueOutgoing(out _), "send ran in the IME commit frame");
-            ChatOverlay.TickInputForTest();
-            if (finalLength == 1000)
-            {
-                True(ChatOverlay.TryDequeueOutgoing(out var sent), "committed boundary draft was rejected");
-                Equal(committed, sent, "committed payload");
-                Equal(string.Empty, ChatOverlay.GetDraft(), "accepted IME draft was not cleared");
-            }
-            else
-            {
-                True(!ChatOverlay.TryDequeueOutgoing(out _), "committed over-limit draft was sent");
-                Equal(committed, ChatOverlay.GetDraft(), "rejected committed draft");
-                True(ChatOverlay.GetStatusText().Contains("초과"), "committed oversize feedback");
-            }
-            ChatOverlay.TickInputForTest();
-            True(!ChatOverlay.TryDequeueOutgoing(out _), "IME submit token was consumed twice");
-        }
-    }
-
-    private static void ImeEnterSendsCommittedText()
-    {
-        ChatOverlay.ResetHarness();
-        ChatOverlay.SetDraft("안녕");
-        Input.compositionString = "가";
-        var writesBefore = ChatOverlay.GetDraftWriteCount();
-        ChatOverlay.TickInputForTest(KeyCode.Return);
-        Equal(writesBefore, ChatOverlay.GetDraftWriteCount(), "candidate Enter changed the draft");
-        Equal("가", Input.compositionString, "candidate Enter changed composition");
-        True(!ChatOverlay.TryDequeueOutgoing(out _), "candidate Enter sent text");
-
-        ChatOverlay.SetDraft("안녕가");
-        Input.compositionString = string.Empty;
-        ChatOverlay.TickInputForTest();
-        True(!ChatOverlay.TryDequeueOutgoing(out _), "commit frame sent text before it settled");
-        Equal("안녕가", ChatOverlay.GetDraft(), "draft after candidate commit");
-        ChatOverlay.TickInputForTest();
-        True(ChatOverlay.TryDequeueOutgoing(out var sent), "one Enter did not send after composition committed");
-        Equal("안녕가", sent, "payload after candidate commit");
-        True(!ChatOverlay.TryDequeueOutgoing(out _), "IME Enter sent twice");
-    }
-
-    private static void WheelDistanceDoesNotDependOnHistory()
-    {
-        foreach (var count in new[] { 10, 300 })
-        {
-            ChatOverlay.ResetHarness();
-            ChatOverlay.SetChatMessages(Enumerable.Range(0, count).Select(CreateMessage));
-            var scrollable = ChatOverlay.GetContentHeight() - 502f;
-            ChatOverlay.WheelForTest(1f);
-            Near(100f, ChatOverlay.GetScrollPosition() * scrollable, 0.01f, $"upward wheel distance for {count} messages");
-            ChatOverlay.WheelForTest(-0.25f);
-            Near(75f, ChatOverlay.GetScrollPosition() * scrollable, 0.01f, $"fractional downward wheel distance for {count} messages");
-        }
-    }
-
-    private static void WheelRespectsBoundsAndViewport()
-    {
-        ChatOverlay.ResetHarness();
-        ChatOverlay.SetViewportHeight(800f);
-        ChatOverlay.SetChatMessages(Enumerable.Range(0, 30).Select(CreateMessage));
-        var scrollable = ChatOverlay.GetContentHeight() - 800f;
-        ChatOverlay.WheelForTest(2.5f);
-        Near(250f, ChatOverlay.GetScrollPosition() * scrollable, 0.01f, "distance with a taller viewport");
-        var before = ChatOverlay.GetScrollPosition();
-        ChatOverlay.WheelForTest(1f, insideViewport: false);
-        Near(before, ChatOverlay.GetScrollPosition(), 0.0001f, "wheel outside viewport");
-        ChatOverlay.WheelForTest(10000f);
-        Near(1f, ChatOverlay.GetScrollPosition(), 0.0001f, "top clamp");
-        ChatOverlay.WheelForTest(-10000f);
-        Near(0f, ChatOverlay.GetScrollPosition(), 0.0001f, "bottom clamp");
-
-        foreach (var count in new[] { 0, 1 })
-        {
-            ChatOverlay.ResetHarness();
-            ChatOverlay.SetChatMessages(Enumerable.Range(0, count).Select(CreateMessage));
-            ChatOverlay.SetScrollPosition(0.8f);
-            ChatOverlay.WheelForTest(1f);
-            True(float.IsFinite(ChatOverlay.GetScrollPosition()), "non-overflowing wheel produced a non-finite position");
-            Near(0f, ChatOverlay.GetScrollPosition(), 0.0001f, "non-overflowing wheel position");
-        }
-    }
-
-    private static void BottomFollowingUsesDistance()
-    {
-        foreach (var count in new[] { 10, 300 })
-        foreach (var distance in new[] { 31f, 32f, 33f, 200f })
-        {
-            ChatOverlay.ResetHarness();
-            ChatOverlay.SetChatMessages(Enumerable.Range(0, count).Select(CreateMessage));
-            var scrollableBefore = ChatOverlay.GetContentHeight() - 502f;
-            ChatOverlay.SetScrollPosition(distance / scrollableBefore);
-            var topOffsetBefore = (1f - ChatOverlay.GetScrollPosition()) * scrollableBefore;
-            ChatOverlay.SetChatMessages(Enumerable.Range(0, count + 1).Select(CreateMessage));
-
-            if (distance <= 32f)
-                Near(0f, ChatOverlay.GetScrollPosition(), 0.0001f, $"bottom following at {distance} UI units with {count} messages");
-            else
-            {
-                var topOffsetAfter = (1f - ChatOverlay.GetScrollPosition()) * (ChatOverlay.GetContentHeight() - 502f);
-                var removedLeadingHeight = count == 300 ? 96f : 0f;
-                Near(topOffsetBefore - removedLeadingHeight, topOffsetAfter, 0.02f, $"reader position at {distance} UI units with {count} messages");
-                True(ChatOverlay.GetScrollPosition() > 0f, "reader outside the bottom threshold was snapped down");
-            }
-        }
-    }
-
-    private static void NonOverflowingHistoryFollowsBottom()
-    {
-        ChatOverlay.ResetHarness();
-        ChatOverlay.SetChatMessages(Enumerable.Range(0, 1).Select(CreateMessage));
-        ChatOverlay.SetScrollPosition(1f);
-        ChatOverlay.SetChatMessages(Enumerable.Range(0, 10).Select(CreateMessage));
-        Near(0f, ChatOverlay.GetScrollPosition(), 0.0001f, "initial overflow bottom following");
-    }
-
-    private static ChatUiMessage CreateMessage(int index) => new()
-    {
-        Id = $"message-{index:D3}",
-        Sender = $"Sender {index:D3}",
-        CharacterId = "101",
-        CharacterName = "Character",
-        Order = "P1",
-        Text = $"Message {index:D3}"
-    };
-
-    private static void True(bool condition, string description)
+    internal static void True(bool condition, string description)
     {
         _assertions++;
-        if (!condition)
-            throw new InvalidOperationException($"Expected true: {description}.");
+        if (!condition) throw new InvalidOperationException(description);
     }
-
-    private static void Equal<T>(T expected, T actual, string description)
+    internal static void Equal<T>(T expected, T actual, string description)
     {
         _assertions++;
         if (!EqualityComparer<T>.Default.Equals(expected, actual))
-            throw new InvalidOperationException($"{description}: expected {expected}, got {actual}.");
+            throw new InvalidOperationException($"{description}: expected {expected}, got {actual}");
     }
-
-    private static void Same(object expected, object actual, string description)
+    internal static void Near(float expected, float actual, string description)
     {
         _assertions++;
-        if (!ReferenceEquals(expected, actual))
-            throw new InvalidOperationException($"{description}: expected the same object reference.");
+        if (!float.IsFinite(actual) || Math.Abs(expected - actual) > 0.05f)
+            throw new InvalidOperationException($"{description}: expected {expected}, got {actual}");
+    }
+    internal static void Summary() => Console.WriteLine($"{Passed} overlay regression checks passed ({_assertions} assertions).");
+}
+
+internal static class OverlayTests
+{
+    private static int Main()
+    {
+        Check.Run("300-row shift retains rows and releases only dropped texts", ShiftRetainsRows);
+        Check.Run("optimistic acknowledgement keeps the rendered row", OptimisticAcknowledgement);
+        Check.Run("participant metadata change replaces only its row", ParticipantChange);
+        Check.Run("row creation failure cleans old and completed new rows before retry", RowCreationFailureRecovery);
+        Check.Run("initial row creation failure releases the partial UI before delayed retry", InitialRowCreationFailureRecovery);
+        Check.Run("ordinary refresh restores rows after a text scale presentation failure", TextScalePresentationFailureRecovery);
+        Check.Run("multiline row heights follow measured FairyGUI text", MultilineMeasurement);
+        Check.Run("display truncation counts Unicode code points", DisplayTruncation);
+        Check.Run("Enter and Send preserve over-limit drafts", OverLimitDraft);
+        Check.Run("1000 code points send intact through Enter and Send", CodePointBoundary);
+        Check.Run("draft feedback survives status updates and clears after correction", DraftFeedback);
+        Check.Run("explicit IME Send validates the final committed draft", ExplicitImeValidation);
+        ScrollControlsTests.Run();
+        KeyboardInputTests.Run();
+        PortraitStateTests.Run();
+        WindowSettingsTests.Run();
+        ChatOverlay.Shutdown();
+        Check.Summary();
+        return 0;
     }
 
-    private static void NotSame(object expected, object actual, string description)
+    internal static ChatUiMessage Message(int index, string? text = null, string character = "101", string name = "Character", string order = "P1") => new()
     {
-        _assertions++;
-        if (ReferenceEquals(expected, actual))
-            throw new InvalidOperationException($"{description}: expected a new object reference.");
+        Id = "message-" + index,
+        Sender = "Sender " + index,
+        CharacterId = character,
+        CharacterName = name,
+        Order = order,
+        Text = text ?? "Message " + index
+    };
+
+    private static void ShiftRetainsRows()
+    {
+        ChatOverlay.ResetHarness();
+        ChatOverlay.SetChatMessages(Enumerable.Range(0, 300).Select(i => Message(i)));
+        var old = ChatOverlay.InspectRows();
+        var staticTexts = ChatOverlay.InspectChatTexts().Except(old.SelectMany(row => row.Texts)).ToArray();
+        ChatOverlay.SetChatMessages(Enumerable.Range(1, 300).Select(i => Message(i)));
+        var next = ChatOverlay.InspectRows();
+        Check.Equal(300, next.Length, "bounded row count");
+        Check.True(old[0].Root.IsDisposed, "trimmed row disposed");
+        Check.True(old[0].Texts.All(text => text.IsDisposed && text.HandleReleased), "trimmed texts released");
+        for (var i = 1; i < old.Length; i++)
+            Check.True(ReferenceEquals(old[i].Root, next[i - 1].Root), "retained row " + i);
+        var tracked = ChatOverlay.InspectChatTexts();
+        Check.Equal(staticTexts.Length + 900, tracked.Length, "tracked text references bounded");
+        Check.True(staticTexts.All(tracked.Contains), "window text remains tracked");
+        Check.True(old[0].Texts.All(text => !tracked.Contains(text)), "trimmed text references removed");
+        Check.True(old.Skip(1).SelectMany(row => row.Texts).All(tracked.Contains), "retained text references remain");
     }
 
-    private static void Near(float expected, float actual, float tolerance, string description)
+    private static void OptimisticAcknowledgement()
     {
-        _assertions++;
-        if (Math.Abs(expected - actual) > tolerance)
-            throw new InvalidOperationException($"{description}: expected {expected}, got {actual}.");
+        ChatOverlay.ResetHarness();
+        ChatUiMessage Pending(string id) => new()
+        {
+            Id = id, ClientMessageId = "client-1", Sender = "Mina", CharacterId = "101",
+            CharacterName = "Character", Order = "P1", Text = "hello"
+        };
+        ChatOverlay.SetChatMessages(new[] { Pending("") });
+        var old = ChatOverlay.InspectRows().Single();
+        ChatOverlay.SetChatMessages(new[] { Pending("server-1") });
+        var next = ChatOverlay.InspectRows().Single();
+        Check.True(ReferenceEquals(old.Root, next.Root), "ack reuses row");
+        Check.True(!old.Root.IsDisposed, "ack does not dispose row");
+        Check.Equal(old.Identity, next.Identity, "client identity stable");
     }
 
-    private sealed class ReferenceComparer<T> : IEqualityComparer<T> where T : class
+    private static void ParticipantChange()
     {
-        public static readonly ReferenceComparer<T> Instance = new();
-        public bool Equals(T? left, T? right) => ReferenceEquals(left, right);
-        public int GetHashCode(T value) => RuntimeHelpers.GetHashCode(value);
+        ChatOverlay.ResetHarness();
+        ChatOverlay.SetChatMessages(new[] { Message(0), Message(1) });
+        var old = ChatOverlay.InspectRows();
+        ChatOverlay.SetChatMessages(new[] { Message(0, character: "102", name: "New character", order: "P3"), Message(1) });
+        var next = ChatOverlay.InspectRows();
+        Check.True(old[0].Root.IsDisposed && !ReferenceEquals(old[0].Root, next[0].Root), "changed presentation rebuilt");
+        Check.True(ReferenceEquals(old[1].Root, next[1].Root), "unaffected row retained");
+        Check.Equal("P3 · New character", next[0].Participant!.GetText(), "new participant displayed");
+    }
+
+    private static void RowCreationFailureRecovery()
+    {
+        foreach (var retainFirst in new[] { false, true })
+        {
+            ChatOverlay.ResetHarness();
+            var emptyUiHandles = FguiNode.LiveHandles;
+            var staticTexts = ChatOverlay.InspectChatTexts();
+            var count = retainFirst ? 3 : 2;
+            var firstReplacement = retainFirst ? 1 : 0;
+            ChatOverlay.SetChatMessages(Enumerable.Range(0, count).Select(index => Message(index)));
+            var old = ChatOverlay.InspectRows();
+            var oldNodes = old.SelectMany(row => row.Root.Children.Prepend(row.Root)).ToArray();
+            var populatedHandles = FguiNode.LiveHandles;
+            var content = ChatOverlay.Node("Viewport").Children.Single();
+            const string faultText = "second replacement fails";
+            var next = Enumerable.Range(0, count).Select(index => index < firstReplacement
+                ? Message(index)
+                : Message(index, index == firstReplacement ? "first replacement succeeds" : faultText)).ToArray();
+
+            InvalidOperationException? failure = null;
+            FguiNode.FaultText = faultText;
+            try { ChatOverlay.SetChatMessages(next); }
+            catch (InvalidOperationException error) { failure = error; }
+            finally { FguiNode.FaultText = null; }
+
+            Check.True(failure != null, "row creation failure propagates");
+            Check.Equal("Injected text failure.", failure!.Message, "original creation failure is preserved");
+            Check.Equal(0, ChatOverlay.InspectRows().Length, "failed reconciliation publishes no disposed rows");
+            Check.Equal(0, content.Children.Count, "failed reconciliation leaves no orphan content children");
+            Check.True(oldNodes.All(node => node.IsDisposed && node.HandleReleased), "all old row handles are released");
+            Check.True(staticTexts.SequenceEqual(ChatOverlay.InspectChatTexts()), "only live window texts remain registered");
+            Check.Equal(emptyUiHandles, FguiNode.LiveHandles, "completed and failed new rows release every handle");
+            Check.Near(0f, ChatOverlay.Scrollable, "failed presentation has no stale scroll range");
+
+            ChatOverlay.SetChatMessages(next);
+            var recovered = ChatOverlay.InspectRows();
+            Check.Equal(count, recovered.Length, "same snapshot retries completely");
+            Check.Equal(count, content.Children.Count, "retry has exactly one content child per published row");
+            Check.True(recovered.All(row => content.Children.Contains(row.Root)
+                && !row.Root.IsDisposed && !row.Root.HandleReleased), "retry publishes only live owned rows");
+            Check.True(old.Select(row => row.Identity).SequenceEqual(recovered.Select(row => row.Identity)),
+                "retry retains logical message identities");
+            for (var index = 0; index < count; index++)
+                Check.Equal(next[index].Text, recovered[index].Body.GetText(), "retry displays the retained snapshot");
+            var tracked = ChatOverlay.InspectChatTexts();
+            Check.Equal(staticTexts.Length + recovered.Sum(row => row.Texts.Length), tracked.Length,
+                "retry registers exactly the live window and row texts");
+            Check.True(tracked.All(text => !text.IsDisposed && !text.HandleReleased), "retry has no stale text registrations");
+            Check.Equal(populatedHandles, FguiNode.LiveHandles, "retry restores the original live handle balance");
+
+            ChatOverlay.SetChatMessages(next.ToArray());
+            Check.True(recovered.Select(row => row.Root).SequenceEqual(ChatOverlay.InspectRows().Select(row => row.Root)),
+                "replay after recovery reuses every row");
+            Check.Equal(populatedHandles, FguiNode.LiveHandles, "replay after recovery adds no handles");
+            ChatOverlay.Shutdown();
+            Check.Equal(1, FguiNode.LiveHandles, "shutdown after reconciliation recovery retains only the borrowed root");
+        }
+    }
+
+    private static void InitialRowCreationFailureRecovery()
+    {
+        ChatOverlay.ResetHarness();
+        var emptyUiHandles = FguiNode.LiveHandles;
+        var root = ChatOverlay.TestRoot;
+        ChatOverlay.Shutdown();
+        const string faultText = "second initial row fails";
+        var messages = new[] { Message(0, "first initial row succeeds"), Message(1, faultText) };
+        ChatOverlay.SetChatMessages(messages);
+
+        InvalidOperationException? failure = null;
+        FguiNode.FaultText = faultText;
+        try { ChatOverlay.Tick(); }
+        catch (InvalidOperationException error) { failure = error; }
+        finally { FguiNode.FaultText = null; }
+
+        Check.True(failure != null, "initial row creation failure propagates");
+        Check.Equal("Injected text failure.", failure!.Message, "initial creation preserves the original exception");
+        Check.Equal(0, ChatOverlay.InspectRows().Length, "initial failure clears published rows");
+        Check.Equal(0, ChatOverlay.InspectChatTexts().Length, "partial UI retains no text registrations");
+        Check.Equal(0, root.Children.Count, "partial UI leaves no native children attached to the game root");
+        Check.Equal(1, FguiNode.LiveHandles, "initial failure releases the completed first row and all UI handles");
+        ChatOverlay.Tick();
+        Check.Equal(1, FguiNode.LiveHandles, "creation retry waits without allocating another partial UI");
+        Check.Equal(0, ChatOverlay.InspectRows().Length, "rows stay absent during the retry delay");
+
+        Time.unscaledTime += 5.1f;
+        ChatOverlay.Tick();
+        var recovered = ChatOverlay.InspectRows();
+        Check.Equal(messages.Length, recovered.Length, "delayed UI retry renders the cached messages");
+        var content = ChatOverlay.Node("Viewport").Children.Single();
+        Check.Equal(recovered.Length, content.Children.Count, "initial recovery has no orphan content children");
+        for (var index = 0; index < messages.Length; index++)
+        {
+            Check.Equal(messages[index].Text, recovered[index].Body.GetText(), "initial recovery keeps the cached message text");
+            Check.True(content.Children.Contains(recovered[index].Root) && !recovered[index].Root.IsDisposed,
+                "initial recovery publishes live attached rows");
+        }
+        var recoveredHandles = emptyUiHandles + recovered.Sum(row => row.Root.Children.Count + 1);
+        Check.Equal(recoveredHandles, FguiNode.LiveHandles, "initial recovery owns exactly the window and rendered row handles");
+        Check.True(ChatOverlay.InspectChatTexts().All(text => !text.IsDisposed && !text.HandleReleased),
+            "initial recovery retains only live text registrations");
+        ChatOverlay.SetChatMessages(messages.ToArray());
+        Check.True(recovered.Select(row => row.Root).SequenceEqual(ChatOverlay.InspectRows().Select(row => row.Root)),
+            "cached identities survive initial failure and replay");
+        Check.Equal(recoveredHandles, FguiNode.LiveHandles, "initial recovery replay does not grow live handles");
+        ChatOverlay.Shutdown();
+        Check.Equal(1, FguiNode.LiveHandles, "shutdown after initial recovery retains only the borrowed root");
+        Check.True(!root.IsDisposed, "initial failure and recovery never dispose the game root");
+    }
+
+    private static void TextScalePresentationFailureRecovery()
+    {
+        ChatOverlay.ResetHarness();
+        try
+        {
+            ChatOverlay.Click("Settings");
+            var emptyUiHandles = FguiNode.LiveHandles;
+            const string faultText = "second scaled row fails";
+            var messages = new[]
+            {
+                Message(0, "first scaled row succeeds"), Message(1, faultText), Message(2, "third scaled row")
+            };
+            ChatOverlay.SetChatMessages(messages);
+            var old = ChatOverlay.InspectRows();
+            var oldNodes = old.SelectMany(row => row.Root.Children.Prepend(row.Root)).ToArray();
+            var populatedHandles = FguiNode.LiveHandles;
+            var windowRect = ChatOverlay.WindowRect;
+            var content = ChatOverlay.Node("Viewport").Children.Single();
+
+            InvalidOperationException? failure = null;
+            FguiNode.FaultText = faultText;
+            try { ChatOverlay.Click("TextLarger"); }
+            catch (InvalidOperationException error) { failure = error; }
+            finally { FguiNode.FaultText = null; }
+
+            Check.True(failure != null, "text scale presentation failure propagates");
+            Check.Equal("Injected text failure.", failure!.Message, "text scale failure preserves the original exception");
+            Check.Near(1.1f, ChatOverlay.TextScale, "failed render retains the requested text scale");
+            Check.Equal(0, ChatOverlay.InspectRows().Length, "failed text scale render clears published rows");
+            Check.Equal(0, content.Children.Count, "failed text scale render leaves no orphan rows");
+            Check.True(oldNodes.All(node => node.IsDisposed && node.HandleReleased), "failed text scale render releases every old row handle");
+            Check.Equal(emptyUiHandles, FguiNode.LiveHandles, "failed text scale render releases completed and partial replacement handles");
+            Check.True(ChatOverlay.WindowOpen, "presentation failure keeps the chat window open");
+
+            // No new snapshot, font or geometry update drives this recovery.
+            ChatOverlay.Tick();
+            var recovered = ChatOverlay.InspectRows();
+            Check.Equal(messages.Length, recovered.Length, "ordinary refresh restores every cached row");
+            Check.True(old.Select(row => row.Identity).SequenceEqual(recovered.Select(row => row.Identity)),
+                "ordinary refresh preserves cached message identities and order");
+            Check.True(content.Children.SequenceEqual(recovered.Select(row => row.Root)),
+                "ordinary refresh restores exactly the published rows in native order");
+            for (var index = 0; index < messages.Length; index++)
+            {
+                Check.Equal(messages[index].Text, recovered[index].Body.GetText(), "ordinary refresh restores each cached body in order");
+                Check.Equal(23, recovered[index].Body.FontSize, "ordinary refresh applies the retained text scale");
+                Check.True(!recovered[index].Root.IsDisposed && !recovered[index].Root.HandleReleased,
+                    "ordinary refresh publishes only live rows");
+            }
+            Check.Equal(populatedHandles, FguiNode.LiveHandles, "ordinary refresh restores the original live handle balance");
+            Check.True(ChatOverlay.WindowOpen, "ordinary refresh preserves the open window");
+            Check.Equal(windowRect, ChatOverlay.WindowRect, "ordinary refresh needs no geometry change");
+            Check.Near(1.1f, ChatOverlay.TextScale, "ordinary refresh needs no further font change");
+            Check.True(ChatOverlay.InspectChatTexts().All(text => !text.IsDisposed && !text.HandleReleased),
+                "ordinary refresh leaves no stale text registrations");
+
+            ChatOverlay.Tick();
+            Check.True(recovered.Select(row => row.Root).SequenceEqual(ChatOverlay.InspectRows().Select(row => row.Root)),
+                "subsequent ordinary refresh retains the recovered rows");
+            Check.Equal(populatedHandles, FguiNode.LiveHandles, "subsequent ordinary refresh adds no handles");
+        }
+        finally
+        {
+            FguiNode.FaultText = null;
+            ChatOverlay.Shutdown();
+        }
+        Check.Equal(1, FguiNode.LiveHandles, "shutdown after text scale recovery retains only the borrowed root");
+    }
+
+    private static void MultilineMeasurement()
+    {
+        ChatOverlay.ResetHarness();
+        var lines = string.Join("\n", Enumerable.Repeat("measured line", 12));
+        ChatOverlay.SetChatMessages(new[] { Message(0), Message(1, lines), new ChatUiMessage { Id = "system", IsSystem = true, Text = lines } });
+        var rows = ChatOverlay.InspectRows();
+        Check.True(rows[1].Height > rows[0].Height, "multiline player row grows");
+        Check.Near(12 * 21 * 1.25f, rows[1].Body.Height, "deterministic measured text height");
+        Check.Near(rows[1].Body.Y + rows[1].Body.Height + 12, rows[1].Height, "player includes measured text and footer");
+        Check.Near(rows[2].Body.Height + 12, rows[2].Height, "system includes measured text and padding");
+        Check.True(rows[2].Root.Y >= rows[1].Root.Y + rows[1].Height, "rows do not overlap");
+    }
+
+    private static void DisplayTruncation()
+    {
+        ChatOverlay.ResetHarness();
+        var exact = string.Concat(Enumerable.Repeat("😀", 1400));
+        var longText = exact + "끝";
+        ChatOverlay.SetChatMessages(new[] { Message(0, exact), Message(1, longText), Message(2, "ordinary") });
+        var rows = ChatOverlay.InspectRows();
+        Check.Equal(exact, rows[0].Body.GetText(), "1400 code points untouched");
+        Check.Equal(string.Concat(Enumerable.Repeat("😀", 1399)) + "…", rows[1].Body.GetText(), "one code point reserved for ellipsis");
+        Check.Equal(1400, PartyProtocol.TextLength(rows[1].Body.GetText()), "display bound uses code points");
+        Check.Equal("ordinary", rows[2].Body.GetText(), "short message unchanged");
+    }
+
+    private static void Submit(bool send)
+    {
+        if (send) ChatOverlay.Click("Send");
+        else ChatOverlay.Tick(key: KeyCode.Return);
+        ChatOverlay.Tick();
+    }
+
+    private static void OverLimitDraft()
+    {
+        foreach (var send in new[] { false, true })
+        {
+            ChatOverlay.ResetHarness();
+            var draft = string.Concat(Enumerable.Repeat("😀", 1001));
+            ChatOverlay.SetDraft(draft);
+            Submit(send);
+            Check.True(!ChatOverlay.TryDequeueOutgoing(out _), "over-limit draft not queued");
+            Check.Equal(draft, ChatOverlay.GetDraft(), "over-limit draft preserved");
+            Check.True(ChatOverlay.Node("Input").Focused, "rejected draft stays editable");
+            Check.Equal("입력 길이 초과: 내용을 줄여주세요.", ChatOverlay.Status, "length feedback shown");
+        }
+    }
+
+    private static void CodePointBoundary()
+    {
+        foreach (var send in new[] { false, true })
+        {
+            ChatOverlay.ResetHarness();
+            var draft = string.Concat(Enumerable.Repeat("😀", 1000));
+            ChatOverlay.SetDraft("  " + draft + "  ");
+            Submit(send);
+            Check.True(ChatOverlay.TryDequeueOutgoing(out var sent), "boundary draft sent");
+            Check.Equal(draft, sent, "all code points retained and surrounding space trimmed");
+            Check.Equal(string.Empty, ChatOverlay.GetDraft(), "successful draft cleared");
+            Check.True(!ChatOverlay.TryDequeueOutgoing(out _), "single submit");
+        }
+    }
+
+    private static void DraftFeedback()
+    {
+        ChatOverlay.ResetHarness();
+        ChatOverlay.SetChatStatus("  연결됨  ");
+        ChatOverlay.SetDraft(new string('가', 1001));
+        ChatOverlay.Tick();
+        Check.Equal("입력 길이 초과: 내용을 줄여주세요.", ChatOverlay.Status, "over-limit feedback");
+        ChatOverlay.SetChatStatus("재연결 중");
+        Check.Equal("입력 길이 초과: 내용을 줄여주세요.", ChatOverlay.Status, "connection change cannot hide draft feedback");
+        ChatOverlay.SetDraft("corrected");
+        ChatOverlay.Tick();
+        Check.Equal("재연결 중", ChatOverlay.Status, "corrected draft restores status");
+        Input.compositionString = new string('가', 2000);
+        ChatOverlay.Tick();
+        Check.Equal("재연결 중", ChatOverlay.Status, "uncommitted IME text not validated");
+        Check.Equal("corrected", ChatOverlay.GetDraft(), "validation never rewrites draft");
+    }
+
+    private static void ExplicitImeValidation()
+    {
+        foreach (var overLimit in new[] { false, true })
+        {
+            ChatOverlay.ResetHarness();
+            var draft = new string('가', overLimit ? 1000 : 999);
+            ChatOverlay.SetDraft(draft);
+            Input.compositionString = "나";
+            ChatOverlay.Click("Send");
+            ChatOverlay.Node("Input").Blur();
+            ChatOverlay.Tick();
+            Check.True(!ChatOverlay.TryDequeueOutgoing(out _), "composition waits");
+            ChatOverlay.SetDraft(draft + "나");
+            Input.compositionString = string.Empty;
+            ChatOverlay.Tick();
+            Check.True(!ChatOverlay.TryDequeueOutgoing(out _), "commit frame waits");
+            ChatOverlay.Tick();
+            Check.Equal(!overLimit, ChatOverlay.TryDequeueOutgoing(out var text), "final committed length validated");
+            Check.Equal(overLimit ? draft + "나" : string.Empty, ChatOverlay.GetDraft(), "committed draft preserved or cleared");
+            if (!overLimit) Check.Equal(draft + "나", text, "final committed message sent");
+            Check.True(!ChatOverlay.TryDequeueOutgoing(out _), "explicit IME sends once");
+        }
     }
 }
-#endif

@@ -1,831 +1,471 @@
 using System;
 using System.Collections.Generic;
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace AstralPartyChatPlugin;
 
+/// <summary>
+/// Chat UI drawn with the game's own FairyGUI. The button lives inside the
+/// current game panel (see <see cref="ChatSnapshot.ChatButtonHost"/>); the window
+/// is a top-level GRoot child, so FairyGUI's hit testing keeps clicks, wheel and
+/// focus inside it away from the game UI underneath.
+/// </summary>
 internal static partial class ChatOverlay
 {
-    private static GameObject? _root;
-    private static GameObject? _chatButton;
-    private static RectTransform? _chatButtonRect;
-    private static GameObject? _chatWindow;
-    private static RectTransform? _chatWindowRect;
-    private static RectTransform? _chatHeaderRect;
-    private static RectTransform? _chatCloseRect;
-    private static RectTransform? _chatInputRect;
-    private static RectTransform? _chatSendRect;
-    private static RectTransform? _chatViewportRect;
-    private static Image? _chatCloseBackground;
-    private static Text? _chatTitleText;
-    private static Text? _chatRoomText;
-    private static InputField? _chatInputField;
-    private static ScrollRect? _chatScrollRect;
-    private static RectTransform? _chatContentRect;
-    private static readonly List<Text> _chatTexts = new();
-    private static Image? _chatFillImage;
-    private static Image? _chatIcon;
-    private static Sprite? _buttonBorderSprite;
-    private static Sprite? _buttonFillSprite;
-    private static Sprite? _chatIconSprite;
-    private static Sprite? _chatWindowBackgroundSprite;
-    private static bool _chatHovered;
+    private const int WindowSortingOrder = 900000;
+    private const float ButtonDesignSize = 72f;
+    private const float HeaderButtonSize = 46f;
+    private const float CreateRetrySeconds = 5f;
+
+    private static readonly Color ButtonBorderColor = new Color32(137, 137, 137, 255);
+    private static readonly Color ButtonFillColor = new Color32(34, 34, 34, 255);
+    private static readonly Color ButtonIconColor = new Color32(155, 155, 155, 255);
+    private static readonly Color AccentColor = new Color32(255, 0, 180, 255);
+    private static readonly Color WindowColor = new Color32(28, 28, 28, 252);
+    private static readonly Color WindowBorderColor = new Color32(120, 120, 120, 255);
+    private static readonly Color HeaderColor = new Color32(38, 38, 38, 255);
+    private static readonly Color HeaderButtonColor = new Color32(52, 52, 52, 255);
+    private static readonly Color InputColor = new Color32(22, 22, 22, 255);
+    private static readonly Color InputBorderColor = new Color32(92, 92, 92, 255);
+    private static readonly Color MutedTextColor = new Color32(175, 175, 175, 255);
+    private static readonly Color BodyTextColor = new Color32(235, 235, 235, 255);
+
+    private static FguiNode? _chatButton;
+    private static FguiNode? _buttonFill;
+    private static FguiNode? _buttonIcon;
+    private static FguiNode? _chatWindow;
+    private static FguiNode? _windowBackground;
+    private static FguiNode? _headerBackground;
+    private static FguiNode? _chatStatusText;
+    private static FguiNode? _closeButton;
+    private static FguiNode? _closeBackground;
+    private static FguiNode? _settingsButton;
+    private static FguiNode? _settingsBackground;
+    private static FguiNode? _chatViewport;
+    private static FguiNode? _chatContent;
+    private static FguiNode? _inputBackground;
+    private static FguiNode? _chatInput;
+    private static FguiNode? _sendButton;
+    private static FguiNode? _resizeGrip;
+    private static readonly List<FguiNode> OwnedNodes = new();
+    private static readonly List<FguiNode> ButtonNodes = new();
+    private static readonly List<FguiNode> _chatTexts = new();
+    private static readonly Dictionary<IntPtr, ChatControl> Controls = new();
+    private static ChatWindowRect _windowRect;
+    private static ChatControl _hoveredControl;
     private static string _chatStatus = "연결 대기 중";
-    // Persisted keys keep the window position saved by existing installations.
-    private const string ChatWindowXPref = "AstralPartyChat.WindowX.v3";
-    private const string ChatWindowYPref = "AstralPartyChat.WindowY.v3";
-    private const string LegacyChatWindowXPref = "AstralPartyChat.WindowX";
-    private const string LegacyChatWindowYPref = "AstralPartyChat.WindowY";
-    private const string LegacyChatWindowXPrefV2 = "AstralPartyChat.WindowX.v2";
-    private const string LegacyChatWindowYPrefV2 = "AstralPartyChat.WindowY.v2";
-    private const string LegacyChatWindowScalePref = "AstralPartyChat.WindowScale";
+    private static float _nextCreateAttemptAt;
 
-    public static void EnsureCreated()
+    private enum ChatControl
     {
-        if (_root != null) return;
-
-        EnsureAssetsRunning();
-
-        _root = new GameObject("AstralPartyChatPluginOverlay");
-        UnityEngine.Object.DontDestroyOnLoad(_root);
-
-        var canvas = _root.AddComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 32766;
-
-        var scaler = _root.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-        scaler.matchWidthOrHeight = 0.5f;
-
-        _root.AddComponent<GraphicRaycaster>();
-
-        CreateChatButton();
-        CreateChatWindow();
+        None,
+        Button,
+        Window,
+        Header,
+        Close,
+        Settings,
+        Viewport,
+        ScrollTrack,
+        Latest,
+        Input,
+        Send,
+        Resize,
+        SettingsPanel,
+        TextSmaller,
+        TextLarger,
+        OpacityDown,
+        OpacityUp,
+        ResetLayout
     }
 
+    private static bool IsCreated => _chatWindow != null;
+
     /// <summary>
-    /// Tears down overlay-owned objects and cancels outstanding portrait
-    /// requests. Game-owned portrait textures and fonts are never destroyed.
-    /// Call on Unity's main thread.
+    /// Tears down overlay-owned FairyGUI objects and cancels outstanding
+    /// portrait requests. Game-owned objects are never disposed. Main thread only.
     /// </summary>
     public static void Shutdown()
     {
         ResetInputState();
-        ResetChatScrollControls();
-        if (_root != null)
-        {
-            try
-            {
-                _root.SetActive(false);
-                UnityEngine.Object.Destroy(_root);
-            }
-            catch { }
-        }
-
+        try { DisposeNodes(); }
+        catch { }
         ShutdownAssets();
         ResetMessagesPresentation();
-
-        _root = null;
-        _chatButton = null;
-        _chatButtonRect = null;
-        _chatWindow = null;
-        _chatWindowRect = null;
-        _chatHeaderRect = null;
-        _chatCloseRect = null;
-        _chatInputRect = null;
-        _chatSendRect = null;
-        _chatViewportRect = null;
-        _chatCloseBackground = null;
-        _chatTitleText = null;
-        _chatRoomText = null;
-        _chatInputField = null;
-        _chatScrollRect = null;
-        _chatContentRect = null;
-        _chatFillImage = null;
-        _chatIcon = null;
-        _buttonBorderSprite = null;
-        _buttonFillSprite = null;
-        _chatIconSprite = null;
-        _chatWindowBackgroundSprite = null;
-        _chatHovered = false;
-        _chatCloseHovered = false;
         _messages = new List<ChatUiMessage>();
         _chatStatus = "연결 대기 중";
+        _nextCreateAttemptAt = 0f;
     }
 
-    public static void Refresh(ChatSnapshot snapshot)
+    public static void Refresh(ChatSnapshot snapshot, FguiNode root)
     {
-        if (_root == null) return;
+        // The game registers its fonts and panels before any chat screen
+        // appears, so the UI is created on that first appearance.
+        if (!snapshot.ChatButtonVisible && !IsCreated)
+            return;
+        if (!EnsureCreated(root))
+            return;
 
-        UpdateChatButton(snapshot);
+        if (_messagesPresentationInvalid)
+            RenderChatMessages(force: false);
+
         RefreshGameKoreanFont();
-        UpdateChatWindow(snapshot);
+        ProcessCharacterImageDownloads();
+        UpdateChatButton(snapshot, root);
+        UpdateChatWindow(snapshot, root);
         RefreshRenderedPortraits(snapshot);
     }
 
-    private static void CreateChatButton()
+    private static bool EnsureCreated(FguiNode root)
     {
-        if (_root == null || _chatButton != null)
-            return;
-
-        _chatButton = new GameObject("ChatButton");
-        _chatButton.transform.SetParent(_root.transform, false);
-
-        _buttonBorderSprite ??= CreateRoundedSquareSprite(
-            96,
-            14,
-            0,
-            new Color32(137, 137, 137, 255),
-            new Color32(137, 137, 137, 255));
-
-        _buttonFillSprite ??= CreateRoundedSquareSprite(
-            96,
-            10,
-            0,
-            Color.white,
-            Color.white);
-
-        var buttonImage = _chatButton.AddComponent<Image>();
-        buttonImage.sprite = _buttonBorderSprite;
-        buttonImage.type = Image.Type.Simple;
-        buttonImage.preserveAspect = true;
-        buttonImage.color = Color.white;
-        buttonImage.raycastTarget = true;
-
-        _chatButtonRect = _chatButton.GetComponent<RectTransform>();
-        _chatButtonRect.anchorMin = new Vector2(0.5f, 0.5f);
-        _chatButtonRect.anchorMax = new Vector2(0.5f, 0.5f);
-        _chatButtonRect.pivot = new Vector2(0.5f, 0.5f);
-        _chatButtonRect.sizeDelta = new Vector2(72f, 72f);
-
-        var fillObject = new GameObject("Fill");
-        fillObject.transform.SetParent(_chatButton.transform, false);
-
-        _chatFillImage = fillObject.AddComponent<Image>();
-        _chatFillImage.sprite = _buttonFillSprite;
-        _chatFillImage.type = Image.Type.Simple;
-        _chatFillImage.preserveAspect = true;
-        _chatFillImage.color = new Color32(34, 34, 34, 255);
-        _chatFillImage.raycastTarget = false;
-
-        var fillRect = fillObject.GetComponent<RectTransform>();
-        fillRect.anchorMin = new Vector2(0.5f, 0.5f);
-        fillRect.anchorMax = new Vector2(0.5f, 0.5f);
-        fillRect.pivot = new Vector2(0.5f, 0.5f);
-        fillRect.anchoredPosition = Vector2.zero;
-        fillRect.sizeDelta = new Vector2(64f, 64f);
-
-        var iconObject = new GameObject("ChatIcon");
-        iconObject.transform.SetParent(_chatButton.transform, false);
-
-        _chatIconSprite ??= CreateChatIconSprite();
-
-        _chatIcon = iconObject.AddComponent<Image>();
-        _chatIcon.sprite = _chatIconSprite;
-        _chatIcon.type = Image.Type.Simple;
-        _chatIcon.preserveAspect = true;
-        _chatIcon.color = new Color32(155, 155, 155, 255);
-        _chatIcon.raycastTarget = false;
-
-        var iconRect = iconObject.GetComponent<RectTransform>();
-        iconRect.anchorMin = new Vector2(0.5f, 0.5f);
-        iconRect.anchorMax = new Vector2(0.5f, 0.5f);
-        iconRect.pivot = new Vector2(0.5f, 0.5f);
-        iconRect.anchoredPosition = Vector2.zero;
-        iconRect.sizeDelta = new Vector2(38f, 38f);
-
-        _chatButton.SetActive(false);
-    }
-
-    private static void CreateChatWindow()
-    {
-        if (_root == null || _chatWindow != null)
-            return;
-
-        _chatWindow = new GameObject("ChatWindow");
-        _chatWindow.transform.SetParent(_root.transform, false);
-        // Hide first so a partial construction failure can never leak onto startup.
-        _chatWindow.SetActive(false);
-
-        var panelImage = _chatWindow.AddComponent<Image>();
-        _chatWindowBackgroundSprite ??= CreateRoundedRectSprite(
-            560,
-            700,
-            18,
-            4,
-            new Color32(28, 28, 28, 252),
-            new Color32(120, 120, 120, 255));
-        panelImage.sprite = _chatWindowBackgroundSprite;
-        panelImage.type = Image.Type.Simple;
-        panelImage.color = Color.white;
-        panelImage.raycastTarget = true;
-
-        _chatWindowRect = _chatWindow.GetComponent<RectTransform>();
-        _chatWindowRect.anchorMin = new Vector2(1f, 0.5f);
-        _chatWindowRect.anchorMax = new Vector2(1f, 0.5f);
-        _chatWindowRect.pivot = new Vector2(1f, 0.5f);
-        // v2 position keys intentionally ignore coordinates saved by older
-        // builds, which could leave the whole overlay outside the screen.
-        var savedX = PlayerPrefs.GetFloat(ChatWindowXPref, -92f);
-        var savedY = PlayerPrefs.GetFloat(ChatWindowYPref, 0f);
-        _chatWindowRect.anchoredPosition =
-            IsSaneChatWindowPosition(savedX, savedY)
-                ? new Vector2(savedX, savedY)
-                : new Vector2(-92f, 0f);
-        _chatWindowRect.sizeDelta = new Vector2(560f, 700f);
-        _chatWindowRect.localScale = Vector3.one;
-
-        var removedLegacyPrefs = false;
-        foreach (var key in new[]
+        if (IsCreated && !_chatWindow!.IsDisposed)
         {
-            LegacyChatWindowXPref,
-            LegacyChatWindowYPref,
-            LegacyChatWindowXPrefV2,
-            LegacyChatWindowYPrefV2,
-            LegacyChatWindowScalePref
-        })
-        {
-            if (!PlayerPrefs.HasKey(key))
-                continue;
-
-            PlayerPrefs.DeleteKey(key);
-            removedLegacyPrefs = true;
+            if (!_chatWindow.IsChildOf(root))
+                root.AddChild(_chatWindow);
+            _chatWindow.SetSortingOrder(WindowSortingOrder);
+            return true;
         }
-
-        if (removedLegacyPrefs)
-            PlayerPrefs.Save();
-
-        var header = CreateRoundedImage(
-            _chatWindow.transform,
-            "Header",
-            new Vector2(536f, 82f),
-            new Vector2(12f, 12f),
-            12,
-            0,
-            new Color32(38, 38, 38, 255),
-            new Color32(38, 38, 38, 255),
-            true);
-        _chatHeaderRect = header.GetComponent<RectTransform>();
-
-        var headerIcon = new GameObject("HeaderIcon");
-        headerIcon.transform.SetParent(header.transform, false);
-        var headerIconImage = headerIcon.AddComponent<Image>();
-        headerIconImage.sprite = _chatIconSprite ??= CreateChatIconSprite();
-        headerIconImage.type = Image.Type.Simple;
-        headerIconImage.preserveAspect = true;
-        headerIconImage.color = Color.white;
-        headerIconImage.raycastTarget = false;
-        var headerIconRect = headerIcon.GetComponent<RectTransform>();
-        SetTopLeftRect(headerIconRect, new Vector2(16f, 22f), new Vector2(34f, 34f));
-
-        // Keep title/subtitle inside Header so they are guaranteed to render
-        // above the header background in the same local coordinate space.
-        _chatTitleText = CreateUiText(
-            header.transform,
-            "Title",
-            "채팅",
-            24,
-            Color.white,
-            TextAnchor.MiddleLeft,
-            new Vector2(64f, 6f),
-            new Vector2(330f, 44f));
-        _chatTitleText.horizontalOverflow = HorizontalWrapMode.Overflow;
-        _chatTitleText.verticalOverflow = VerticalWrapMode.Overflow;
-
-        _chatRoomText = CreateUiText(
-            header.transform,
-            "Room",
-            "더미 채팅 UI",
-            17,
-            new Color32(175, 175, 175, 255),
-            TextAnchor.MiddleLeft,
-            new Vector2(64f, 46f),
-            new Vector2(390f, 26f));
-
-        var closeObject = new GameObject("Close");
-        closeObject.transform.SetParent(_chatWindow.transform, false);
-        _chatCloseBackground = closeObject.AddComponent<Image>();
-        _chatCloseBackground.sprite = _buttonFillSprite ??= CreateRoundedSquareSprite(
-            96,
-            10,
-            0,
-            Color.white,
-            Color.white);
-        _chatCloseBackground.type = Image.Type.Simple;
-        _chatCloseBackground.color = new Color32(52, 52, 52, 255);
-        _chatCloseBackground.raycastTarget = true;
-        _chatCloseRect = closeObject.GetComponent<RectTransform>();
-        _chatCloseRect.anchorMin = new Vector2(1f, 1f);
-        _chatCloseRect.anchorMax = new Vector2(1f, 1f);
-        _chatCloseRect.pivot = new Vector2(0.5f, 0.5f);
-        _chatCloseRect.anchoredPosition = new Vector2(-42f, -53f);
-        _chatCloseRect.sizeDelta = new Vector2(46f, 46f);
-        CreateCloseSvgStroke(closeObject, "CloseStrokeA", 45f);
-        CreateCloseSvgStroke(closeObject, "CloseStrokeB", -45f);
-
-        // Transparent masked viewport: messages render directly on the overlay
-        // without a visible container box.
-        var viewport = CreateFlatImage(
-            _chatWindow.transform,
-            "MessageViewport",
-            Color.white,
-            true);
-        _chatViewportRect = viewport.GetComponent<RectTransform>();
-        SetTopLeftRect(
-            _chatViewportRect,
-            new Vector2(20f, 110f),
-            new Vector2(ChatMessageViewportWidth, 502f));
-
-        var mask = viewport.AddComponent<Mask>();
-        mask.showMaskGraphic = false;
-
-        _chatScrollRect = viewport.AddComponent<ScrollRect>();
-        _chatScrollRect.horizontal = false;
-        _chatScrollRect.vertical = true;
-        _chatScrollRect.movementType = ScrollRect.MovementType.Clamped;
-        _chatScrollRect.inertia = true;
-        _chatScrollRect.decelerationRate = 0.135f;
-        _chatScrollRect.scrollSensitivity = ChatWheelStep;
-        _chatScrollRect.viewport = _chatViewportRect;
-
-        var content = CreateFlatImage(
-            viewport.transform,
-            "Content",
-            new Color32(0, 0, 0, 0),
-            false);
-        _chatContentRect = content.GetComponent<RectTransform>();
-        _chatContentRect.anchorMin = new Vector2(0f, 1f);
-        _chatContentRect.anchorMax = new Vector2(1f, 1f);
-        _chatContentRect.pivot = new Vector2(0.5f, 1f);
-        _chatContentRect.anchoredPosition = Vector2.zero;
-        _chatContentRect.sizeDelta = new Vector2(0f, 502f);
-        _chatScrollRect.content = _chatContentRect;
-
-        CreateChatScrollControls();
-
-        var inputBackground = CreateRoundedImage(
-            _chatWindow.transform,
-            "InputBackground",
-            new Vector2(410f, 60f),
-            new Vector2(20f, 618f),
-            12,
-            3,
-            new Color32(22, 22, 22, 255),
-            new Color32(92, 92, 92, 255),
-            true);
-        _chatInputRect = inputBackground.GetComponent<RectTransform>();
-
-        var inputText = CreateUiText(
-            inputBackground.transform,
-            "InputText",
-            string.Empty,
-            21,
-            new Color32(235, 235, 235, 255),
-            TextAnchor.MiddleLeft,
-            new Vector2(16f, 0f),
-            new Vector2(378f, 60f));
-        inputText.horizontalOverflow = HorizontalWrapMode.Wrap;
-        inputText.verticalOverflow = VerticalWrapMode.Truncate;
-
-        var placeholder = CreateUiText(
-            inputBackground.transform,
-            "Placeholder",
-            "메시지를 입력하세요...",
-            21,
-            new Color32(125, 125, 125, 255),
-            TextAnchor.MiddleLeft,
-            new Vector2(16f, 0f),
-            new Vector2(378f, 60f));
-
-        _chatInputField = inputBackground.AddComponent<InputField>();
-        _chatInputField.targetGraphic = inputBackground.GetComponent<Image>();
-        _chatInputField.textComponent = inputText;
-        _chatInputField.placeholder = placeholder;
-        _chatInputField.lineType = InputField.LineType.SingleLine;
-        _chatInputField.contentType = InputField.ContentType.Standard;
-        _chatInputField.characterLimit = PartyProtocol.MaxTextLength * 2;
-        _chatInputField.customCaretColor = true;
-        _chatInputField.caretColor = Color.white;
-        _chatInputField.selectionColor = new Color32(255, 0, 180, 110);
-        _chatInputField.caretWidth = 2;
-
-        var sendButton = CreateRoundedImage(
-            _chatWindow.transform,
-            "SendButton",
-            new Vector2(98f, 60f),
-            new Vector2(442f, 618f),
-            12,
-            3,
-            new Color32(255, 0, 180, 255),
-            new Color32(137, 137, 137, 255),
-            true);
-        _chatSendRect = sendButton.GetComponent<RectTransform>();
-
-        CreateUiText(
-            sendButton.transform,
-            "SendText",
-            "전송",
-            21,
-            Color.white,
-            TextAnchor.MiddleCenter,
-            Vector2.zero,
-            new Vector2(98f, 60f));
-
-        RenderChatMessages(force: true);
-        _chatWindow.SetActive(false);
-    }
-
-    private static GameObject CreateFlatImage(
-        Transform parent,
-        string name,
-        Color32 color,
-        bool raycastTarget)
-    {
-        var gameObject = new GameObject(name);
-        gameObject.transform.SetParent(parent, false);
-
-        var image = gameObject.AddComponent<Image>();
-        image.color = color;
-        image.raycastTarget = raycastTarget;
-
-        return gameObject;
-    }
-
-    private static GameObject CreateRoundedImage(
-        Transform parent,
-        string name,
-        Vector2 size,
-        Vector2 topLeft,
-        int radius,
-        int border,
-        Color32 fill,
-        Color32 borderColor,
-        bool raycastTarget)
-    {
-        var gameObject = new GameObject(name);
-        gameObject.transform.SetParent(parent, false);
-
-        var image = gameObject.AddComponent<Image>();
-        image.sprite = CreateRoundedRectSprite(
-            Math.Max(4, (int)Math.Round(size.x)),
-            Math.Max(4, (int)Math.Round(size.y)),
-            radius,
-            border,
-            fill,
-            borderColor);
-        image.type = Image.Type.Simple;
-        image.color = Color.white;
-        image.raycastTarget = raycastTarget;
-
-        SetTopLeftRect(
-            gameObject.GetComponent<RectTransform>(),
-            topLeft,
-            size);
-
-        return gameObject;
-    }
-
-    private static Text CreateUiText(
-        Transform parent,
-        string name,
-        string value,
-        int fontSize,
-        Color color,
-        TextAnchor alignment,
-        Vector2 topLeft,
-        Vector2 size)
-    {
-        var gameObject = new GameObject(name);
-        gameObject.transform.SetParent(parent, false);
-
-        var text = gameObject.AddComponent<Text>();
-        text.supportRichText = false;
-        text.font = GetChatFont();
-        text.fontSize = fontSize;
-        // Chat UI always uses the game's regular font weight.
-        text.fontStyle = FontStyle.Normal;
-        text.color = color;
-        text.alignment = alignment;
-        text.text = value;
-        text.raycastTarget = false;
-
-        SetTopLeftRect(
-            gameObject.GetComponent<RectTransform>(),
-            topLeft,
-            size);
-
-        _chatTexts.Add(text);
-        return text;
-    }
-
-    private static void SetTopLeftRect(
-        RectTransform rect,
-        Vector2 topLeft,
-        Vector2 size)
-    {
-        rect.anchorMin = new Vector2(0f, 1f);
-        rect.anchorMax = new Vector2(0f, 1f);
-        rect.pivot = new Vector2(0f, 1f);
-        rect.anchoredPosition = new Vector2(topLeft.x, -topLeft.y);
-        rect.sizeDelta = size;
-    }
-
-    private static Sprite CreateRoundedRectSprite(
-        int width,
-        int height,
-        int radius,
-        int border,
-        Color32 fill,
-        Color32 borderColor)
-    {
-        var texture = TrackOwnedUnityResource(
-            new Texture2D(width, height, TextureFormat.RGBA32, false));
-        texture.name = "AstralPartyChatPluginRoundedRect";
-        texture.wrapMode = TextureWrapMode.Clamp;
-        texture.filterMode = FilterMode.Bilinear;
-
-        var pixels = new Color32[width * height];
-        var transparent = new Color32(0, 0, 0, 0);
-
-        for (var y = 0; y < height; y++)
+        if (IsCreated)
         {
-            for (var x = 0; x < width; x++)
-            {
-                var insideOuter = InsideRoundedRect(
-                    x,
-                    y,
-                    0,
-                    0,
-                    width - 1,
-                    height - 1,
-                    radius);
-
-                if (!insideOuter)
-                {
-                    pixels[y * width + x] = transparent;
-                    continue;
-                }
-
-                if (border <= 0)
-                {
-                    pixels[y * width + x] = fill;
-                    continue;
-                }
-
-                var insideInner = InsideRoundedRect(
-                    x,
-                    y,
-                    border,
-                    border,
-                    width - 1 - border,
-                    height - 1 - border,
-                    Math.Max(2, radius - border));
-
-                pixels[y * width + x] = insideInner ? fill : borderColor;
-            }
+            // Another plugin or a game reset disposed the window; rebuild it.
+            DisposeNodes();
+            ResetInputState();
         }
-
-        texture.SetPixels32(pixels);
-        texture.Apply(false, false);
-
-        return CreateOwnedSprite(
-            texture,
-            new Rect(0f, 0f, width, height),
-            new Vector2(0.5f, 0.5f),
-            100f);
-    }
-
-    private static Sprite CreateRoundedSquareSprite(
-        int size,
-        int radius,
-        int border,
-        Color32 fill,
-        Color32 borderColor)
-    {
-        var texture = TrackOwnedUnityResource(
-            new Texture2D(size, size, TextureFormat.RGBA32, false));
-        texture.name = "AstralPartyChatPluginRoundedButton";
-        texture.wrapMode = TextureWrapMode.Clamp;
-        texture.filterMode = FilterMode.Bilinear;
-
-        var pixels = new Color32[size * size];
-        var transparent = new Color32(0, 0, 0, 0);
-
-        for (var y = 0; y < size; y++)
-        {
-            for (var x = 0; x < size; x++)
-            {
-                var insideOuter = InsideRoundedSquare(x, y, size, radius, 0);
-                if (!insideOuter)
-                {
-                    pixels[y * size + x] = transparent;
-                    continue;
-                }
-
-                var insideInner = InsideRoundedSquare(
-                    x,
-                    y,
-                    size,
-                    Math.Max(2, radius - border),
-                    border);
-
-                pixels[y * size + x] = insideInner ? fill : borderColor;
-            }
-        }
-
-        texture.SetPixels32(pixels);
-        texture.Apply(false, false);
-
-        return CreateOwnedSprite(
-            texture,
-            new Rect(0f, 0f, size, size),
-            new Vector2(0.5f, 0.5f),
-            100f);
-    }
-
-    private static Sprite CreateChatIconSprite()
-    {
-        var texture = TrackOwnedUnityResource(
-            new Texture2D(2, 2, TextureFormat.RGBA32, false));
-        texture.name = "AstralPartyChatPluginMessagesIcon";
-        texture.wrapMode = TextureWrapMode.Clamp;
-        texture.filterMode = FilterMode.Bilinear;
-
-        var pngBytes = Convert.FromBase64String(MessagesIconData.PngBase64);
-        var il2CppBytes = new Il2CppStructArray<byte>(pngBytes);
-
-        if (!ImageConversion.LoadImage(texture, il2CppBytes, true))
-            throw new InvalidOperationException("Failed to load embedded messages.svg raster.");
-
-        return CreateOwnedSprite(
-            texture,
-            new Rect(0f, 0f, texture.width, texture.height),
-            new Vector2(0.5f, 0.5f),
-            100f);
-    }
-
-    private static void CreateCloseSvgStroke(
-        GameObject parent,
-        string name,
-        float rotation)
-    {
-        var stroke = new GameObject(name);
-        stroke.transform.SetParent(parent.transform, false);
-
-        var image = stroke.AddComponent<Image>();
-        image.sprite = CreateRoundedSquareSprite(
-            16,
-            7,
-            0,
-            Color.white,
-            Color.white);
-        image.type = Image.Type.Simple;
-        image.color = Color.white;
-        image.raycastTarget = false;
-
-        var rect = stroke.GetComponent<RectTransform>();
-        rect.anchorMin = new Vector2(0.5f, 0.5f);
-        rect.anchorMax = new Vector2(0.5f, 0.5f);
-        rect.pivot = new Vector2(0.5f, 0.5f);
-        rect.anchoredPosition = Vector2.zero;
-        rect.sizeDelta = new Vector2(20f, 2.8f);
-        rect.localEulerAngles = new Vector3(0f, 0f, rotation);
-    }
-
-    private static bool InsideRoundedSquare(
-        int x,
-        int y,
-        int size,
-        int radius,
-        int inset)
-    {
-        return InsideRoundedRect(
-            x,
-            y,
-            inset,
-            inset,
-            size - 1 - inset,
-            size - 1 - inset,
-            radius);
-    }
-
-    private static bool InsideRoundedRect(
-        int x,
-        int y,
-        int left,
-        int bottom,
-        int right,
-        int top,
-        int radius)
-    {
-        if (x < left || x > right || y < bottom || y > top)
+        if (Time.unscaledTime < _nextCreateAttemptAt)
             return false;
 
-        if (x >= left + radius && x <= right - radius)
+        try
+        {
+            EnsureAssetsRunning();
+            LoadSettings();
+            RefreshChatFont();
+            CreateChatButton();
+            CreateChatWindow(root);
             return true;
-
-        if (y >= bottom + radius && y <= top - radius)
-            return true;
-
-        var centerX = x < left + radius ? left + radius : right - radius;
-        var centerY = y < bottom + radius ? bottom + radius : top - radius;
-        var dx = x - centerX;
-        var dy = y - centerY;
-
-        return (dx * dx) + (dy * dy) <= radius * radius;
+        }
+        catch
+        {
+            // Never keep a half-built UI; the caller logs the failure.
+            _nextCreateAttemptAt = Time.unscaledTime + CreateRetrySeconds;
+            try { DisposeNodes(); }
+            catch { }
+            throw;
+        }
     }
 
-    
-
-    
-
-    
-
-    private static void UpdateChatButton(ChatSnapshot snapshot)
+    private static FguiNode Track(FguiNode node, List<FguiNode>? owner)
     {
-        if (_root == null || _chatButton == null || _chatButtonRect == null)
-            return;
+        (owner ?? OwnedNodes).Add(node);
+        return node;
+    }
 
-        if (!snapshot.ChatButtonVisible)
+    private static FguiNode AddComponent(FguiNode parent, float x, float y, float width, float height,
+        List<FguiNode>? owner = null)
+    {
+        var node = Track(FguiNode.Component(width, height), owner);
+        parent.AddChild(node);
+        node.SetXY(x, y);
+        return node;
+    }
+
+    private static FguiNode AddGraph(FguiNode parent, float x, float y, float width, float height,
+        Color fill, float radius = 0f, float lineSize = 0f, Color lineColor = default, List<FguiNode>? owner = null)
+    {
+        var node = Track(FguiNode.Graph(width, height), owner);
+        parent.AddChild(node);
+        node.SetXY(x, y);
+        node.SetTouchable(false);
+        node.Fill(fill, radius, lineSize, lineColor);
+        return node;
+    }
+
+    private static FguiNode AddText(FguiNode parent, string value, int size, Color color,
+        FguiAlign align, float x, float y, float width, float height,
+        FguiVerticalAlign verticalAlign = FguiVerticalAlign.Middle, bool wrap = false, List<FguiNode>? owner = null)
+    {
+        var node = Track(FguiNode.Text(width, height), owner);
+        parent.AddChild(node);
+        node.SetTouchable(false);
+        node.SetTextStyle(ChatFontName, size, color, align, verticalAlign, singleLine: !wrap,
+            wrap ? FguiAutoSize.Height : FguiAutoSize.Shrink);
+        node.SetXY(x, y);
+        node.SetSize(width, height);
+        node.SetText(value);
+        _chatTexts.Add(node);
+        return node;
+    }
+
+    private static FguiNode AddLoader(FguiNode parent, float x, float y, float size, List<FguiNode>? owner = null)
+    {
+        var node = Track(FguiNode.Loader(size, size), owner);
+        parent.AddChild(node);
+        node.SetTouchable(false);
+        node.StretchContent();
+        node.SetXY(x, y);
+        return node;
+    }
+
+    private static FguiNode AddIcon(FguiNode parent, float x, float y, float size, Color color,
+        List<FguiNode>? owner = null)
+    {
+        var node = AddLoader(parent, x, y, size, owner);
+        node.SetTexture(GetChatIconTexture());
+        node.SetColor(color);
+        return node;
+    }
+
+    private static FguiNode AddButton(FguiNode parent, ChatControl control, float x, float y, float width, float height)
+    {
+        var button = AddComponent(parent, x, y, width, height);
+        button.SetOpaque(true);
+        Register(button, control);
+        return button;
+    }
+
+    private static void Register(FguiNode node, ChatControl control) => Controls[node.Pointer] = control;
+
+    private static void CreateChatButton()
+    {
+        _chatButton = Track(FguiNode.Component(ButtonDesignSize, ButtonDesignSize), ButtonNodes);
+        _chatButton.SetOpaque(true);
+        Register(_chatButton, ChatControl.Button);
+        AddGraph(_chatButton, 0f, 0f, ButtonDesignSize, ButtonDesignSize, ButtonBorderColor, 10f, owner: ButtonNodes);
+        _buttonFill = AddGraph(_chatButton, 4f, 4f, 64f, 64f, ButtonFillColor, 7f, owner: ButtonNodes);
+        _buttonIcon = AddIcon(_chatButton, 17f, 17f, 38f, ButtonIconColor, ButtonNodes);
+        _chatButton.SetVisible(false);
+    }
+
+    private static void CreateChatWindow(FguiNode root)
+    {
+        var window = _chatWindow = Track(FguiNode.Component(ChatLayout.DefaultWidth, ChatLayout.DefaultHeight), null);
+        root.AddChild(window);
+        window.SetSortingOrder(WindowSortingOrder);
+        window.SetOpaque(true);
+        // Hide first so a partial construction failure can never leak onto the screen.
+        window.SetVisible(false);
+        Register(window, ChatControl.Window);
+
+        _windowBackground = AddGraph(window, 0f, 0f, 1f, 1f, WindowColor);
+        _headerBackground = AddGraph(window, 12f, 12f, 1f, 82f, HeaderColor);
+        _headerBackground.SetTouchable(true);
+        Register(_headerBackground, ChatControl.Header);
+        AddIcon(window, 28f, 34f, 34f, Color.white);
+        AddText(window, "채팅", 24, Color.white, FguiAlign.Left, 76f, 18f, 300f, 44f);
+        _chatStatusText = AddText(window, _chatStatus, 17, MutedTextColor, FguiAlign.Left, 76f, 58f, 1f, 26f);
+
+        (_settingsButton, _settingsBackground) = CreateHeaderButton(window, ChatControl.Settings);
+        for (var line = 0; line < 3; line++)
+            AddGraph(_settingsButton, 13f, 14f + line * 8f, 20f, 3f, Color.white, 1.5f);
+        (_closeButton, _closeBackground) = CreateHeaderButton(window, ChatControl.Close);
+        foreach (var angle in new[] { 45f, -45f })
         {
-            if (_chatButton.activeSelf)
-                _chatButton.SetActive(false);
+            var stroke = AddGraph(_closeButton, 13f, 21.6f, 20f, 2.8f, Color.white, 1.4f);
+            stroke.SetCenterPivot();
+            stroke.SetXY(23f, 23f);
+            stroke.SetRotation(angle);
+        }
 
-            SetChatButtonHover(false);
+        // Rows are clipped by the viewport and scrolled by moving the content.
+        _chatViewport = AddButton(window, ChatControl.Viewport, ChatLayout.SidePadding, ChatLayout.MessagesTop, 1f, 1f);
+        _chatViewport.ClipChildren();
+        _chatContent = AddComponent(_chatViewport, 0f, 0f, 1f, 1f);
+        _chatContent.SetTouchable(false);
+
+        CreateChatScrollControls(window);
+
+        _inputBackground = AddGraph(window, ChatLayout.SidePadding, 0f, 1f, ChatLayout.InputHeight,
+            InputColor, 12f, 3f, InputBorderColor);
+        var input = _chatInput = Track(FguiNode.Input(1f, ChatLayout.InputHeight), null);
+        window.AddChild(input);
+        input.SetTextStyle(ChatFontName, 21, BodyTextColor, FguiAlign.Left, FguiVerticalAlign.Middle,
+            singleLine: true, FguiAutoSize.None);
+        input.SetPrompt("[color=#7D7D7D]메시지를 입력하세요...[/color]");
+        input.SetMaxLength(PartyProtocol.MaxTextLength * 2);
+        _chatTexts.Add(input);
+        Register(input, ChatControl.Input);
+
+        _sendButton = AddButton(window, ChatControl.Send, 0f, 0f, ChatLayout.SendWidth, ChatLayout.InputHeight);
+        AddGraph(_sendButton, 0f, 0f, ChatLayout.SendWidth, ChatLayout.InputHeight,
+            AccentColor, 12f, 3f, ButtonBorderColor);
+        AddText(_sendButton, "전송", 21, Color.white, FguiAlign.Center, 0f, 0f, ChatLayout.SendWidth, ChatLayout.InputHeight);
+
+        _resizeGrip = AddButton(window, ChatControl.Resize, 0f, 0f, 22f, 22f);
+        foreach (var (dx, dy) in new[] { (14f, 14f), (8f, 14f), (14f, 8f), (2f, 14f), (8f, 8f), (14f, 2f) })
+            AddGraph(_resizeGrip, dx, dy, 4f, 4f, ButtonBorderColor);
+
+        CreateSettingsPanel(window);
+        _windowRect = default;
+        ApplyWindowLayout(root, force: true);
+        ApplyWindowOpacity();
+        RenderChatMessages(force: true);
+    }
+
+    private static (FguiNode Button, FguiNode Background) CreateHeaderButton(FguiNode window, ChatControl control)
+    {
+        var button = AddButton(window, control, 0f, 0f, HeaderButtonSize, HeaderButtonSize);
+        var background = AddGraph(button, 0f, 0f, HeaderButtonSize, HeaderButtonSize, HeaderButtonColor, 10f);
+        return (button, background);
+    }
+
+    /// <summary>Applies the persisted geometry; returns whether the message width changed.</summary>
+    private static bool ApplyWindowLayout(FguiNode root, bool force)
+    {
+        if (_chatWindow == null)
+            return false;
+        var rect = ChatLayout.Place(_windowGeometry, root.Width, root.Height);
+        if (!force && rect == _windowRect)
+            return false;
+        var resized = force || rect.Width != _windowRect.Width || rect.Height != _windowRect.Height;
+        var widthChanged = force || rect.Width != _windowRect.Width;
+        _windowRect = rect;
+        _chatWindow.SetXY(rect.X, rect.Y);
+        if (!resized)
+            return false;
+
+        var width = rect.Width;
+        var height = rect.Height;
+        _chatWindow.SetSize(width, height);
+        _windowBackground?.SetSize(width, height);
+        _headerBackground?.SetSize(width - 24f, 82f);
+        _chatStatusText?.SetSize(Math.Max(1f, width - 76f - HeaderButtonSize * 2f - 40f), 26f);
+        _settingsButton?.SetXY(width - 42f - 54f - HeaderButtonSize * 0.5f, 53f - HeaderButtonSize * 0.5f);
+        _closeButton?.SetXY(width - 42f - HeaderButtonSize * 0.5f, 53f - HeaderButtonSize * 0.5f);
+
+        var viewportHeight = ChatLayout.ViewportHeight(height);
+        _chatViewport?.SetSize(ChatLayout.ViewportWidth(width), viewportHeight);
+
+        var footerY = height - 82f;
+        var inputWidth = width - ChatLayout.SidePadding * 2f - ChatLayout.SendWidth - 12f;
+        _inputBackground?.SetXY(ChatLayout.SidePadding, footerY);
+        _inputBackground?.SetSize(inputWidth, ChatLayout.InputHeight);
+        _chatInput?.SetXY(ChatLayout.SidePadding + 16f, footerY);
+        _chatInput?.SetSize(inputWidth - 32f, ChatLayout.InputHeight);
+        _sendButton?.SetXY(width - ChatLayout.SidePadding - ChatLayout.SendWidth, footerY);
+        _resizeGrip?.SetXY(width - 22f, height - 22f);
+
+        LayoutChatScrollControls(width, viewportHeight);
+        LayoutSettingsPanel(width, viewportHeight);
+        return widthChanged;
+    }
+
+    private static void ApplyWindowOpacity()
+    {
+        _windowBackground?.Fill(WithAlpha(WindowColor, _windowOpacity), 18f, 3f,
+            WithAlpha(WindowBorderColor, _windowOpacity));
+        _headerBackground?.Fill(WithAlpha(HeaderColor, _windowOpacity), 12f);
+    }
+
+    private static Color WithAlpha(Color color, float opacity) =>
+        new(color.r, color.g, color.b, color.a * opacity);
+
+    private static void UpdateChatButton(ChatSnapshot snapshot, FguiNode root)
+    {
+        var button = _chatButton;
+        if (button == null)
+            return;
+        if (button.IsDisposed)
+        {
+            // The game disposed the panel that hosted the button; rebuild it.
+            ReleaseTrackedNodes(ButtonNodes);
+            _chatButton = _buttonFill = _buttonIcon = null;
+            if (_hoveredControl == ChatControl.Button)
+                _hoveredControl = ChatControl.None;
+            CreateChatButton();
+            button = _chatButton!;
+        }
+
+        var host = snapshot.ChatButtonHost;
+        if (!snapshot.ChatButtonVisible || host == null)
+        {
+            button.SetVisible(false);
             return;
         }
 
-        var rootRect = _root.GetComponent<RectTransform>();
-        if (rootRect == null)
-            return;
-
-        if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                rootRect,
-                snapshot.ChatButtonScreenPoint,
-                null,
-                out var localPoint))
-            return;
-
-        _chatButtonRect.anchoredPosition = localPoint;
-
-        var buttonScale = 1f;
-        if (snapshot.ChatButtonScreenSize > 1f
-            && RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                rootRect,
-                Vector2.zero,
-                null,
-                out var localOrigin)
-            && RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                rootRect,
-                new Vector2(snapshot.ChatButtonScreenSize, 0f),
-                null,
-                out var localSizePoint))
-        {
-            var desiredLocalSize = Math.Abs(
-                localSizePoint.x - localOrigin.x);
-            if (desiredLocalSize > 1f)
-                buttonScale = Mathf.Clamp(
-                    desiredLocalSize / 72f,
-                    0.45f,
-                    1.6f);
-        }
-
-        _chatButtonRect.localScale = new Vector3(
-            buttonScale,
-            buttonScale,
-            1f);
-
-        if (!_chatButton.activeSelf)
-            _chatButton.SetActive(true);
-
-        SetChatButtonHover(
-            RectTransformUtility.RectangleContainsScreenPoint(
-                _chatButtonRect,
-                Input.mousePosition,
-                null));
-
+        if (!button.IsChildOf(host))
+            host.AddChild(button);
+        // Inside a game panel the button keeps the panel's own order; on GRoot
+        // it must stay above the panels it is laid over.
+        button.SetSortingOrder(host.Pointer == root.Pointer ? WindowSortingOrder - 1 : 0);
+        var size = snapshot.ChatButtonSize > 1f ? snapshot.ChatButtonSize : ButtonDesignSize;
+        button.SetScale(size / ButtonDesignSize);
+        button.SetXY(snapshot.ChatButtonPosition.x, snapshot.ChatButtonPosition.y);
+        button.SetVisible(true);
     }
 
-    private static void SetChatButtonHover(bool hovered)
+    private static void ApplyHover(ChatControl next)
     {
-        if (_chatHovered == hovered)
+        if (_hoveredControl == next)
             return;
-
-        _chatHovered = hovered;
-
-        if (_chatFillImage != null)
-            _chatFillImage.color = hovered
-                ? new Color32(255, 0, 180, 255)
-                : new Color32(34, 34, 34, 255);
-
-        if (_chatIcon != null)
-            _chatIcon.color = hovered
-                ? Color.white
-                : new Color32(155, 155, 155, 255);
+        var previous = _hoveredControl;
+        _hoveredControl = next;
+        SetControlHover(previous, false);
+        SetControlHover(next, true);
     }
 
+    private static void SetControlHover(ChatControl control, bool hovered)
+    {
+        switch (control)
+        {
+            case ChatControl.Button:
+                _buttonFill?.Fill(hovered ? AccentColor : ButtonFillColor, 7f);
+                _buttonIcon?.SetColor(hovered ? Color.white : ButtonIconColor);
+                break;
+            case ChatControl.Close:
+                _closeBackground?.Fill(hovered ? AccentColor : HeaderButtonColor, 10f);
+                break;
+            case ChatControl.Settings:
+                RefreshSettingsButton(hovered);
+                break;
+            case ChatControl.TextSmaller:
+            case ChatControl.TextLarger:
+            case ChatControl.OpacityDown:
+            case ChatControl.OpacityUp:
+            case ChatControl.ResetLayout:
+                SetSettingsControlHover(control, hovered);
+                break;
+        }
+    }
+
+    private static void ReleaseTrackedNodes(List<FguiNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            Controls.Remove(node.Pointer);
+            _chatTexts.Remove(node);
+            try { node.ReleaseHandle(); }
+            catch { }
+        }
+        nodes.Clear();
+    }
+
+    private static void DisposeNodes()
+    {
+        try
+        {
+            // Native disposal reaches children, but their CLR wrappers still
+            // own individual handles and must all be released separately.
+            try { _chatWindow?.Dispose(); }
+            catch { }
+            try { _chatButton?.Dispose(); }
+            catch { }
+        }
+        finally
+        {
+            foreach (var row in RenderedChatRows)
+                row.ReleaseHandles();
+            RenderedChatRows.Clear();
+            ReleaseTrackedNodes(OwnedNodes);
+            ReleaseTrackedNodes(ButtonNodes);
+            _chatTexts.Clear();
+            Controls.Clear();
+            ResetSettingsPanel();
+            ResetChatScrollControls();
+            _chatButton = _buttonFill = _buttonIcon = null;
+            _chatWindow = _windowBackground = _headerBackground = _chatStatusText = null;
+            _closeButton = _closeBackground = _settingsButton = _settingsBackground = null;
+            _chatViewport = _chatContent = null;
+            _inputBackground = _chatInput = _sendButton = _resizeGrip = null;
+            _windowRect = default;
+            _hoveredControl = ChatControl.None;
+        }
+    }
 }
