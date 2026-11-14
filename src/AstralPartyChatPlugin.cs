@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using BepInEx;
 using BepInEx.Unity.IL2CPP;
@@ -26,6 +27,11 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
     private int _lastUiRevision = -1;
     private string _lastUiStatus = string.Empty;
     private int _lastTickFrame = -1;
+    private PluginUpdateClient? _updates;
+    private RuntimeHttp? _updateHttp;
+    private Action? _restart;
+    private Action<string>? _noticeWarning;
+    private bool _restartRequested;
 
     public override void Load()
     {
@@ -51,6 +57,7 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
             _harmony.Patch(update, prefix: new HarmonyMethod(prefix));
 
             PatchChatKeyboardInput(_harmony);
+            StartUpdateCheck();
 
             Log.LogInfo("AstralPartyChatPlugin " + PluginVersion + " loaded.");
         }
@@ -70,6 +77,11 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
         ResetChatKeyboardInputState();
         _client?.Dispose();
         _client = null;
+        _updates?.Dispose();
+        _updates = null;
+        _updateHttp?.Dispose();
+        _updateHttp = null;
+        UpdateNotice.Shutdown();
         ChatOverlay.Shutdown();
         GameChatRuntime.Shutdown();
         _lastUiRevision = -1;
@@ -77,6 +89,65 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
         _lastTickFrame = -1;
         _lastStageError.Clear();
         return true;
+    }
+
+    // Runs last in Load: an update problem must never keep the chat from starting.
+    private void StartUpdateCheck()
+    {
+        try
+        {
+            var pluginPath = typeof(AstralPartyChatPlugin).Assembly.Location;
+            if (string.IsNullOrEmpty(pluginPath))
+            {
+                Log.LogWarning("Plugin file location is unknown; update check skipped.");
+                return;
+            }
+            var installer = new UpdateInstaller(pluginPath, message => Log.LogInfo(message));
+            installer.PrepareStartup();
+            var autoUpdate = Config.Bind("Update", "AutoUpdate", true,
+                "게임 시작 시 서명된 최신 플러그인을 자동 설치합니다. 적용하려면 게임을 다시 시작해야 합니다.");
+            string bepInExVersion;
+            try
+            {
+                // The API returns SemanticVersioning.Version; avoid adding that DLL to the plugin references.
+                bepInExVersion = typeof(Paths).GetProperty("BepInExVersion", BindingFlags.Public | BindingFlags.Static)?
+                    .GetValue(null)?.ToString() ?? string.Empty;
+            }
+            catch (Exception ex)
+            {
+                bepInExVersion = string.Empty;
+                Log.LogWarning("Could not read the running BepInEx version; plugin auto-install disabled: " + ex.Message);
+            }
+            _restart = Restart;
+            _noticeWarning = message => Log.LogWarning(message);
+            _updateHttp = new RuntimeHttp(PluginVersion);
+            _updates = new PluginUpdateClient(PluginVersion, bepInExVersion, autoUpdate.Value,
+                _updateHttp.DownloadAsync, installer.Install, message => Log.LogInfo(message));
+            Log.LogInfo("Plugin update check started; BepInEx=" + bepInExVersion + "; AutoUpdate=" + autoUpdate.Value);
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning("Plugin update check unavailable: " + ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    private void Restart()
+    {
+        var updates = _updates;
+        if (_restartRequested || updates == null || !updates.Snapshot().RestartRequired)
+            return;
+        try
+        {
+            using var current = Process.GetCurrentProcess();
+            var executable = Paths.ExecutablePath;
+            if (string.IsNullOrEmpty(executable))
+                executable = current.MainModule?.FileName ?? string.Empty;
+            GameRestart.Start(executable, current.Id);
+            _restartRequested = true;
+            Log.LogInfo("Restart helper waiting for game PID " + current.Id + "; executable=" + executable);
+            Application.Quit();
+        }
+        catch (Exception ex) { updates.RestartFailed(ex); }
     }
 
     private static AstralPartyChatPlugin? _instance;
@@ -107,6 +178,10 @@ public sealed partial class AstralPartyChatPlugin : BasePlugin
         {
             LogStageError("game-state", ex);
         }
+
+        var updates = _updates;
+        if (updates != null)
+            UpdateNotice.Tick(updates.Revision, updates.Snapshot(), _restart!, _noticeWarning!);
 
         try
         {

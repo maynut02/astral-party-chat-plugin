@@ -10,7 +10,7 @@ namespace AstralPartyChatPlugin;
 // never game object pointers, so reconnects cannot retain destroyed instances.
 internal sealed class NativeGameData : IGameDataAccess
 {
-    private readonly Dictionary<string, IntPtr> _classes = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Assembly, string Namespace, string Name), IntPtr> _classes = new();
     private readonly Dictionary<(IntPtr Class, string Name), IntPtr> _fields = new();
 
     // The x64 game export writes size_t (8 bytes). The installed Interop binding
@@ -21,7 +21,8 @@ internal sealed class NativeGameData : IGameDataAccess
 
     public unsafe IntPtr FindClass(string assemblyName, string namespaze, string name)
     {
-        var key = assemblyName + ":" + namespaze + "." + name;
+        // Looked up several times per frame: a tuple key hits the cache without building a string.
+        var key = (assemblyName, namespaze, name);
         if (_classes.TryGetValue(key, out var cached)) return cached;
         var assemblies = GetDomainAssemblies(IL2CPP.il2cpp_domain_get(), out var count);
         for (nuint index = 0; index < count; index++)

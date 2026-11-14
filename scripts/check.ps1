@@ -8,7 +8,7 @@ if (-not $WorkRoot) { $WorkRoot = Join-Path $repoRoot '.work' }
 . (Join-Path $PSScriptRoot 'dotnet-sdk.ps1')
 $dotnet = Get-AstralDotnet -Root $repoRoot -WorkRoot $WorkRoot -DotNetPath $DotNetPath
 & (Join-Path $PSScriptRoot 'check-public-files.ps1')
-foreach ($suite in @('DotNetSdkTests', 'ReferenceFilesTests', 'ProjectVersionTests', 'BuildVersionTests', 'PackageReleaseTests', 'ReleasePreparationTests', 'ReleaseUploadTests')) {
+foreach ($suite in @('DotNetSdkTests', 'ReferenceFilesTests', 'ProjectVersionTests', 'BuildVersionTests', 'PackageReleaseTests', 'InstallerTests', 'ReleasePreparationTests', 'ReleaseUploadTests')) {
     $arguments = @{}
     if ($suite -in @('DotNetSdkTests', 'BuildVersionTests', 'PackageReleaseTests')) { $arguments.DotNetPath = $dotnet }
     $global:LASTEXITCODE = 0

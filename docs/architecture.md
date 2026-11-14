@@ -18,9 +18,13 @@
 | `src/ChatLayout.cs` | Unity와 분리된 창 위치·크기 제한과 설정값 계산 |
 | `src/ChatInputSubmitState.cs` | IME 조합 확정과 Enter 제출 상태 |
 | `src/RemotePayload.cs` | 외부 응답 크기와 PNG 크기 제한 |
+| `src/UpdateClient.cs`, `UpdateManifest.cs`, `SemanticVersion.cs` | 최신 릴리즈 확인, 서명·주소·크기·SHA-256 검증과 업데이트 상태 |
+| `src/UpdateInstaller.cs`, `GameRestart.cs` | 실행 중인 플러그인 DLL 교체와 이전 파일 정리, 게임 재시작 |
+| `src/UpdateNotice.cs`, `.Assets.cs` | 왼쪽 위 업데이트 안내 패널과 전용 글꼴 |
+| `installer/install.bat`, `install.ps1` | 설치 ZIP에 넣는 설치 프로그램(게임 찾기, BepInEx·설정, 예전 플러그인 파일 정리) |
 | `Directory.Build.props`, `Directory.Build.targets` | 참조 경로 선택, `VERSION` 검증과 `obj`의 버전 상수 생성 |
 | `scripts/reference-files.ps1`, `scripts/dotnet-sdk.ps1` | 환경 준비와 빌드가 공유하는 참조·SDK 처리 |
-| `scripts/build.ps1`, `scripts/package-release.ps1`, `scripts/package-files.ps1` | DLL 빌드, 공통 ZIP·체크섬 처리와 버전별 패키징 |
+| `scripts/build.ps1`, `scripts/package-release.ps1`, `scripts/package-files.ps1`, `scripts/upload-release.ps1` | DLL 빌드, 설치·업데이트 ZIP과 서명된 매니페스트 생성·검증, GitHub Release 업로드 |
 | `scripts/project-version.ps1`, `scripts/release-notes.ps1` | 버전 정책과 릴리즈 설명 생성 |
 | `scripts/check.ps1`, `scripts/test.ps1`, `tests/` | 전체 검사와 런타임 회귀 검사 |
 
@@ -47,6 +51,8 @@
 | 방 생성·확인 | `POST https://astral.maynutlab.com/api/party/rooms` |
 | 캐릭터 이름 목록 | `GET https://astral.maynutlab.com/api/party/characters` |
 | 채팅 | `wss://astral.maynutlab.com/ws/party` |
+| 업데이트 확인 | `GET https://github.com/maynut02/astral-party-chat-plugin/releases/latest/download/update.json`, `update.json.sig` |
+| 업데이트 내려받기 | 검증한 매니페스트의 `https://github.com/maynut02/astral-party-chat-plugin/releases/download/vX.Y.Z/update-vX.Y.Z.zip` |
 
 서버 구현 저장소는 `astral-patch-site`입니다. 규약과 방·WebSocket 처리는 `shared/types/party.ts`, `server/api/party/rooms.post.ts`, `server/routes/ws/party.ts`, `server/utils/party-chat.ts`에서 확인합니다.
 
@@ -100,7 +106,30 @@ FairyGUI의 한 줄 입력칸은 Enter를 처리하면서 포커스를 해제하
 
 `FguiNode`는 Unity 텍스처 포인터마다 GC handle로 유지한 `NTexture` 하나를 여러 로더에서 재사용합니다. `destroyMethod=None`으로 설정해 FairyGUI는 재질만 정리하며 Unity 텍스처는 파괴하지 않습니다. 초상화가 제거될 때는 이를 표시하던 로더를 먼저 비우고 `NTexture`를 Dispose한 뒤 소유한 Unity 자원을 정리합니다. 종료 시에도 UI를 먼저 해제한 뒤 같은 순서로 정리합니다. 등록한 `DynamicFont`도 GC handle로 유지하며, 교체 글꼴을 등록한 뒤 이전 네이티브 글꼴을 Dispose합니다. 종료 시 현재 글꼴을 UnregisterFont·Dispose하되 게임 소유 Unity 글꼴은 파괴하지 않습니다.
 
-패널 클래스 이름은 네이티브 클래스 포인터별로 캐시하고, 앵커 로그 문자열은 화면이나 기준이 바뀔 때만 만듭니다. 버튼 호스트는 매 프레임 게임에서 다시 조회한 주소가 같을 때만 기존 래퍼를 재사용합니다. 메타데이터 캐시와 로그 상태는 런타임 종료 시 초기화합니다.
+패널 클래스 이름은 네이티브 클래스 포인터별로 캐시하고, 앵커 로그 문자열은 화면이나 기준이 바뀔 때만 만듭니다. 버튼 호스트와 GRoot 래퍼는 매 프레임 게임에서 다시 조회한 주소가 같을 때만 기존 래퍼를 재사용합니다. 프레임마다 여러 번 일어나는 클래스 조회는 이름 묶음을 그대로 키로 써서 문자열을 새로 만들지 않습니다. 메타데이터 캐시와 로그 상태는 런타임 종료 시 초기화합니다.
+
+## 자동 업데이트
+
+업데이트 형식과 서명 키는 `astral-party-korean-plugin`과 같고, 받아들이는 주소·파일만 이 저장소로 고정합니다. 릴리즈 파일의 구성과 서명 키 관리는 [릴리즈 문서](releases.md#3-로컬-빌드와-패키징)에 있습니다.
+
+`Load()`의 마지막 단계에서 `UpdateInstaller.PrepareStartup()`이 이전 실행이 남긴 `.new`·`.new.tmp`·`.old`를 지운 뒤 `PluginUpdateClient`가 백그라운드에서 한 번 확인합니다. 이전 실행이 남긴 `.new`는 이번 실행에서 검증한 파일이 아니므로 적용하지 않습니다. 업데이트 준비가 실패해도 채팅은 그대로 시작합니다.
+
+1. 최신 Release의 `update.json`(64KiB 이하)과 `update.json.sig`(256바이트 이하)를 받습니다.
+2. JSON을 해석하기 전에 내려받은 바이트 그대로 ECDSA P-256/SHA-256 서명을 검증합니다.
+3. 매니페스트가 `schemaVersion` 1, 정식 `X.Y.Z` 버전, 이 저장소의 해당 버전 주소와 `update-vX.Y.Z.zip`, 플러그인 DLL 한 개만 가리키는지 확인합니다. 알 수 없는 속성이 있으면 거부합니다. 같은 키로 서명한 다른 플러그인의 매니페스트는 여기서 걸러집니다.
+4. 설치된 버전보다 높을 때만 진행합니다. `AutoUpdate`가 꺼져 있거나 실행 중인 BepInEx가 `minimumBepInEx`보다 낮으면 안내만 하고 내려받지 않습니다.
+5. ZIP의 크기·SHA-256, ZIP 안의 유일한 항목 경로·종류·크기·SHA-256을 확인한 뒤 DLL 바이트를 꺼냅니다.
+6. 실행 중인 DLL과 같은 경로에 `.new`로 기록·flush한 다음 `File.Replace`로 교체하고 이전 파일을 `.old`로 남깁니다. Windows는 로드된 DLL의 이름 변경을 허용하므로 실행 중인 플러그인은 계속 동작합니다. 교체가 실패하면 원래 DLL을 유지하고 임시 파일을 지웁니다.
+
+교체 대상은 설치 경로를 가정하지 않고 BepInEx가 실제로 로드한 어셈블리 파일입니다. 다른 폴더나 다른 이름으로 설치한 경우에도 그 파일을 교체하므로 중복 DLL이 생기지 않습니다.
+
+상태는 `(메시지, 심각도, 재시작 필요)`와 revision으로 UI에 전달합니다. 메시지가 없으면 `UpdateNotice.Tick`은 네이티브 호출 없이 끝나고 UI를 만들지 않습니다. 안내가 필요한 경우는 설치 완료, 검증 이후 단계의 실패, 자동 업데이트가 꺼진 상태의 새 버전, BepInEx 버전 부족, 재시작 실패뿐입니다. 최신 버전이거나 매니페스트를 받지 못하거나 서명이 맞지 않으면 로그만 남깁니다.
+
+안내 패널은 GRoot의 왼쪽 위(여백 32)에 sortingOrder 905000으로 둡니다. 채팅창(900000)보다 위이므로 옮긴 채팅창에 가려지지 않습니다. 게임 글꼴이 준비되기 전인 로그인 화면에도 나타날 수 있어 Windows 글꼴로 전용 FairyGUI 글꼴 별칭을 등록합니다. 게임은 로그인 뒤 게임을 시작할 때 `FontManager.Clear()`로 등록된 글꼴을 모두 해제하므로, 글꼴 표(`FontManager.sFontFactory`)의 버전이 바뀌면 `FontManager.GetFont`로 별칭이 아직 등록한 글꼴을 가리키는지 확인하고, 사라졌을 때만 글꼴을 다시 등록해 패널을 새로 만듭니다. 채팅창이나 다른 플러그인(`astral-party-korean-plugin`의 상태 패널)의 글꼴 등록도 같은 표를 쓰므로, 버전 변화만으로 다시 만들면 두 패널이 서로의 등록에 끝없이 반응합니다. 패널을 닫거나 새로 만들 때는 먼저 숨기고 다음 프레임에 Dispose합니다. FairyGUI가 그 프레임의 히트 대상을 보관하고 게임 코드가 이를 읽기 때문입니다. 닫은 안내는 같은 revision 동안 다시 열지 않습니다.
+
+패널을 만들거나 처리하다 예외가 나면 만든 UI를 정리하고 5초 뒤 다시 시도합니다. 세 번 실패하면 이번 실행에서는 안내를 표시하지 않습니다. 설치된 업데이트는 영향을 받지 않고 다음 게임 시작 때 적용됩니다.
+
+**지금 다시 시작**은 숨긴 `cmd.exe`로 현재 게임 프로세스의 종료를 기다렸다가 같은 실행 파일을 다시 실행하고 `Application.Quit()`을 호출합니다. 경로는 명령 문자열이 아닌 환경 변수로 전달하고, Doorstop이 남긴 `DOORSTOP_*` 변수는 제거합니다. 이 변수가 상속되면 다시 실행된 게임이 BepInEx를 건너뜁니다.
 
 ## 변경 시 확인할 범위
 

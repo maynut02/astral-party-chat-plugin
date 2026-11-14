@@ -161,7 +161,25 @@ namespace AstralPartyChatPlugin
         public static IntPtr TouchTarget(FguiNode root) => Target?.Pointer ?? IntPtr.Zero;
         public static IntPtr ParentOf(IntPtr pointer) => Nodes.TryGetValue(pointer, out var node) ? node.Parent?.Pointer ?? IntPtr.Zero : IntPtr.Zero;
         public static Vector2 PointerInRoot(FguiNode root, Vector3 mouse) => PointerPosition;
-        public static void RegisterFont(string alias, Font font) { }
+        internal static readonly List<string> RegisteredFonts = new();
+        public static int FontRegistryVersion { get; internal set; }
+        public static void RegisterFont(string alias, Font font)
+        {
+            RegisteredFonts.Remove(alias);
+            RegisteredFonts.Add(alias);
+            FontRegistryVersion++;
+        }
+        public static void ReleaseFont(string alias)
+        {
+            if (RegisteredFonts.Remove(alias)) FontRegistryVersion++;
+        }
+        public static bool OwnsFont(string alias)
+        {
+            if (RegisteredFonts.Contains(alias)) return true;
+            // FairyGUI registers a fallback for an unknown name, which writes the table.
+            FontRegistryVersion++;
+            return false;
+        }
         public IntPtr Pointer { get; }
         public FguiNode? Parent { get; private set; }
         public List<FguiNode> Children { get; } = new();
@@ -271,6 +289,8 @@ namespace AstralPartyChatPlugin
             _focused = Target = Root = null;
             PointerPosition = default;
             FaultText = null;
+            RegisteredFonts.Clear();
+            FontRegistryVersion = 0;
         }
     }
 
@@ -378,5 +398,14 @@ namespace AstralPartyChatPlugin
         internal static RowSnapshot[] InspectRows() => RenderedChatRows.Select(row => new RowSnapshot(
             row.Identity, row.RenderKey, row.Root, row.Body, row.Participant, row.Sender,
             row.Portrait, row.Width, row.Height, row.Texts.ToArray())).ToArray();
+    }
+
+    internal static partial class UpdateNotice
+    {
+        private static Font GetFont() => new();
+        private static void ReleaseFontAsset() { }
+        internal static FguiNode? Panel => _panel;
+        internal static FguiNode? CloseButton => _closeButton;
+        internal static FguiNode? RestartButton => _restartButton;
     }
 }

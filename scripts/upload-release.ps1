@@ -1,3 +1,4 @@
+#requires -Version 7.2
 [CmdletBinding()]
 param(
     [string]$Tag = '',
@@ -12,6 +13,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 . (Join-Path $PSScriptRoot 'project-version.ps1')
 . (Join-Path $PSScriptRoot 'release-notes.ps1')
+. (Join-Path $PSScriptRoot 'package-files.ps1')
 $version = Get-AstralProjectVersion -Root $repoRoot
 if (-not $Tag) { $Tag = "v$version" }
 if ((ConvertTo-AstralVersion $Tag -Tag) -cne $version) { throw 'Upload tag must match VERSION.' }
@@ -60,25 +62,9 @@ $selector = "github.com/$repository"
 
 if (-not $AssetRoot) { $AssetRoot = Join-Path $repoRoot "dist/release/$Tag" }
 $AssetRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($AssetRoot)
-$zipName = "AstralPartyChatPlugin-$Tag.zip"
-$names = @($zipName, 'SHA256SUMS.txt')
-$hashes = @{}
-foreach ($name in $names) {
-    $path = Join-Path $AssetRoot $name
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing release asset: $name. Run scripts/package-release.ps1 first." }
-    $hashes[$name] = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-}
-$manifest = [IO.File]::ReadAllLines((Join-Path $AssetRoot 'SHA256SUMS.txt'))
-if ($manifest.Count -ne 1 -or $manifest[0] -cne "$($hashes[$zipName])  $zipName") {
-    throw 'Release checksum must match the ZIP and contain only that ZIP. Re-run scripts/package-release.ps1.'
-}
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$archive = [IO.Compression.ZipFile]::OpenRead((Join-Path $AssetRoot $zipName))
-try {
-    if ($archive.Entries.Count -ne 1 -or $archive.Entries[0].FullName -cne 'BepInEx/plugins/AstralPartyChatPlugin/AstralPartyChatPlugin.dll') {
-        throw 'Release ZIP must contain only the plugin DLL at its installation path.'
-    }
-} finally { $archive.Dispose() }
+$names = @(Get-AstralReleaseAssetNames $Tag)
+# The same checks an installed plugin runs, so a release that cannot auto-update is never published.
+$hashes = Assert-AstralReleaseAssets -Tag $Tag -Repository $repository -Root $AssetRoot
 if ($NotesFile) {
     $NotesFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($NotesFile)
     if (-not (Test-Path -LiteralPath $NotesFile -PathType Leaf)) { throw 'Missing release notes file.' }
@@ -170,7 +156,7 @@ try {
     if (-not $Draft -and (-not $release -or $release.draft)) {
         Invoke-UploadCommand $gh @('release', 'edit', $Tag, '--repo', $selector, '--draft=false') | Out-Null
     }
-    Write-Output "Release upload complete: $Tag (ZIP and SHA256SUMS.txt only)."
+    Write-Output "Release upload complete: $Tag ($($names -join ', '))."
     Write-Output "https://github.com/$repository/releases"
 } finally {
     $resolvedSnapshot = [IO.Path]::GetFullPath($snapshotRoot)

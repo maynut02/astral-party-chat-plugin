@@ -14,5 +14,10 @@ indent_size = 4
 [*.md]
 trim_trailing_whitespace = false
 
-[scripts/{prepare-release,release-notes}.ps1]
+# Windows PowerShell 5.1 reads Korean text correctly only from UTF-8 with a BOM.
+[{scripts/{prepare-release,release-notes},installer/install}.ps1]
 charset = utf-8-bom
+
+# cmd.exe scripts ship inside the release ZIP.
+[*.bat]
+end_of_line = crlf

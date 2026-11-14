@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 7.2
 param()
 
 $ErrorActionPreference = 'Stop'
@@ -8,8 +8,9 @@ $fixtureParent = Join-Path $repoRoot ('.work/upload-tests/' + [Guid]::NewGuid().
 $git = Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1 -ExpandProperty Source
 $utf8 = [Text.UTF8Encoding]::new($false)
 $tag = 'v0.0.1'
+$updateZip = "update-$tag.zip"
 $zipName = "AstralPartyChatPlugin-$tag.zip"
-$assetNames = @($zipName, 'SHA256SUMS.txt')
+$assetNames = @($updateZip, $zipName, 'update.json', 'update.json.sig', 'SHA256SUMS.txt')
 $dllEntry = 'BepInEx/plugins/AstralPartyChatPlugin/AstralPartyChatPlugin.dll'
 $otherSha = '1' * 40
 $script:passed = 0
@@ -170,7 +171,7 @@ if ($arguments[0] -ceq 'release' -and $arguments[2] -ceq $state.TagName) {
         'download' {
             if ($state.Errors.Download) { Write-MockFailure $state.Errors.Download; return }
             $name = Get-MockOption '--pattern'
-            if ($name -cnotin @($state.ZipName, 'SHA256SUMS.txt')) { Write-MockFailure 'Mock rejected download pattern.'; return }
+            if ($name -cnotin $state.AssetNames) { Write-MockFailure 'Mock rejected download pattern.'; return }
             $destination = Get-MockOption '--dir'
             [IO.Directory]::CreateDirectory($destination) | Out-Null
             $path = Join-Path $destination $name
@@ -200,22 +201,36 @@ function Invoke-TestGit([string]$Root, [string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw "Fixture Git failed: $($output -join "`n")" }
     return ($output -join "`n")
 }
-function Write-Checksum($Fixture) {
-    $hash = (Get-FileHash -LiteralPath (Join-Path $Fixture.Assets $zipName) -Algorithm SHA256).Hash.ToLowerInvariant()
-    [IO.File]::WriteAllText((Join-Path $Fixture.Assets 'SHA256SUMS.txt'), "$hash  $zipName`n", $utf8)
+function Write-Checksums([string]$Root, [string]$ReleaseTag = $tag) {
+    $lines = foreach ($name in @("update-$ReleaseTag.zip", "AstralPartyChatPlugin-$ReleaseTag.zip", 'update.json')) {
+        "$((Get-FileHash -LiteralPath (Join-Path $Root $name) -Algorithm SHA256).Hash.ToLowerInvariant())  $name"
+    }
+    [IO.File]::WriteAllText((Join-Path $Root 'SHA256SUMS.txt'), ($lines -join "`n") + "`n", $utf8)
 }
-function Write-TestZip($Fixture, [string[]]$Entries = @($dllEntry)) {
-    $path = Join-Path $Fixture.Assets $zipName
-    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
-    $archive = [IO.Compression.ZipFile]::Open($path, [IO.Compression.ZipArchiveMode]::Create)
-    try {
-        foreach ($name in $Entries) {
-            $entry = $archive.CreateEntry($name)
-            $writer = [IO.StreamWriter]::new($entry.Open(), $utf8)
-            try { $writer.Write('fixture DLL contents; upload never inspects assembly metadata') } finally { $writer.Dispose() }
-        }
-    } finally { $archive.Dispose() }
-    Write-Checksum $Fixture
+# A complete signed release made by the fixture's own packaging functions and throwaway key.
+# The switches produce the specific defects the upload must refuse.
+function Write-ReleaseAssets {
+    param($Fixture, [string]$ReleaseTag = $tag, [string]$Root = '', [string]$Repository = 'owner/repo',
+        [string[]]$UpdateEntries = @($dllEntry), [string[]]$OmitInstallEntries = @(), [string[]]$ExtraInstallEntries = @(),
+        [switch]$DifferentInstallDll)
+
+    if (-not $Root) { $Root = $Fixture.Assets }
+    . (Join-Path $Fixture.Root 'scripts/package-files.ps1')
+    $names = @(Get-AstralReleaseAssetNames $ReleaseTag)
+    $dll = Join-Path $Fixture.Root '.work/fixture-plugin.dll'
+    [IO.File]::WriteAllText($dll, 'fixture DLL contents; upload never inspects assembly metadata', $utf8)
+    $update = [ordered]@{}
+    foreach ($name in $UpdateEntries) { $update[$name] = $dll }
+    New-AstralZipPackage -Files $update -OutputRoot $Root -ZipName $names[0] | Out-Null
+    $install = [ordered]@{}
+    foreach ($name in @($dllEntry, 'BepInEx/config/BepInEx.cfg', 'BepInEx/core/BepInEx.Core.dll', 'winhttp.dll', 'LICENSE-BepInEx.txt', 'install.bat', 'install.ps1') + $ExtraInstallEntries) {
+        if ($name -cin $OmitInstallEntries) { continue }
+        # Assign inside each branch: an if-expression would unroll the byte array into object[].
+        if ($name -ceq $dllEntry -and -not $DifferentInstallDll) { $install[$name] = $dll }
+        else { $install[$name] = $utf8.GetBytes("fixture $name") }
+    }
+    New-AstralZipPackage -Files $install -OutputRoot $Root -ZipName $names[1] | Out-Null
+    New-AstralUpdateManifest -Version $ReleaseTag.Substring(1) -Repository $Repository -OutputRoot $Root -DllPath $dll -SigningKeyPath $Fixture.KeyPath
 }
 function Save-State($Fixture, [hashtable]$State) {
     [IO.File]::WriteAllText($Fixture.StatePath, (ConvertTo-Json -InputObject $State -Depth 50), $utf8)
@@ -230,7 +245,14 @@ function New-Fixture {
     $stateRoot = Join-Path $root '.work/gh'
     $assets = Join-Path $root "dist/release/$tag"
     foreach ($path in @($scripts, $bin, $stateRoot, $assets)) { [IO.Directory]::CreateDirectory($path) | Out-Null }
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/upload-release.ps1'), (Join-Path $repoRoot 'scripts/project-version.ps1'), (Join-Path $repoRoot 'scripts/release-notes.ps1'), (Join-Path $repoRoot 'scripts/prepare-release.ps1') -Destination $scripts
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/upload-release.ps1'), (Join-Path $repoRoot 'scripts/project-version.ps1'), (Join-Path $repoRoot 'scripts/release-notes.ps1'), (Join-Path $repoRoot 'scripts/prepare-release.ps1'), (Join-Path $repoRoot 'scripts/package-files.ps1') -Destination $scripts
+    # The fixture trusts a throwaway key; the real trust key and signing key are never read.
+    $key = [Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP256)
+    try {
+        $keyPath = Join-Path $stateRoot 'signing.pem'
+        [IO.File]::WriteAllText($keyPath, [string]::new([Security.Cryptography.PemEncoding]::Write('PRIVATE KEY', $key.ExportPkcs8PrivateKey())), $utf8)
+        [IO.File]::AppendAllText((Join-Path $scripts 'package-files.ps1'), "`nfunction Get-AstralUpdatePublicKey { '$([Convert]::ToBase64String($key.ExportSubjectPublicKeyInfo()))' }`n", $utf8)
+    } finally { $key.Dispose() }
     [IO.File]::WriteAllText((Join-Path $scripts 'build.ps1'), "throw 'Upload must never invoke build.ps1.'", $utf8)
     [IO.File]::WriteAllText((Join-Path $root 'VERSION'), "0.0.1`n", $utf8)
     [IO.File]::WriteAllText((Join-Path $root 'source.txt'), "committed fixture source`n", $utf8)
@@ -249,15 +271,15 @@ function New-Fixture {
         Root = $root; Script = (Join-Path $scripts 'upload-release.ps1'); Bin = $bin
         Mock = (Join-Path $bin 'gh.ps1'); Assets = $assets
         StatePath = (Join-Path $stateRoot 'state.json'); CallsPath = (Join-Path $stateRoot 'calls.jsonl')
-        Head = (Invoke-TestGit $root @('rev-parse', '--verify', 'HEAD^{commit}'))
+        Head = (Invoke-TestGit $root @('rev-parse', '--verify', 'HEAD^{commit}')); KeyPath = $keyPath
     }
-    Write-TestZip $fixture
+    Write-ReleaseAssets $fixture
     # Packaging may leave a standalone DLL locally. It must never be uploaded.
     [IO.File]::WriteAllText((Join-Path $assets 'AstralPartyChatPlugin.dll'), 'standalone DLL must stay local', $utf8)
     [IO.File]::WriteAllText($fixture.CallsPath, '', $utf8)
     Save-State $fixture @{
         Repository = 'owner/repo'; FullName = 'owner/repo'; PushPermission = $true
-        Head = $fixture.Head; RemoteCommitSha = $fixture.Head; TagName = $tag; ZipName = $zipName
+        Head = $fixture.Head; RemoteCommitSha = $fixture.Head; TagName = $tag; AssetNames = $assetNames
         AssetRoot = $assets; Tag = $null; AnnotatedTags = @{}; Releases = @()
         Errors = @{}; DownloadDifferent = @(); PartialUploadFailure = $false; MutateSourceOnReleaseList = $false
     }
@@ -418,7 +440,7 @@ try {
         $list = @($calls | Where-Object { $_.Arguments[1] -ceq 'repos/owner/repo/releases?per_page=100' })[0]
         Assert-True ($list.Arguments -ccontains '--paginate' -and $list.Arguments -ccontains '--slurp') 'Release listing did not request nested pages.'
         $state = Get-State $f
-        Assert-True (-not $state.Releases[0].draft -and $state.Releases[0].assets.Count -eq 2) 'Fresh release was not published with exactly two assets.'
+        Assert-True (-not $state.Releases[0].draft -and $state.Releases[0].assets.Count -eq $assetNames.Count) 'Fresh release was not published with exactly the release assets.'
         Assert-True ((Get-AssetFingerprint $f) -ceq $before) 'Successful upload changed local release assets.'
         Assert-True ((Invoke-TestGit $f.Root @('status', '--porcelain')) -eq '') 'Upload changed source.'
         Assert-SnapshotsCleaned $f
@@ -531,11 +553,7 @@ try {
             Invoke-TestGit $f.Root @('tag', $ignored) | Out-Null
         }
         $assets = Join-Path $f.Root '.work/range-assets'
-        [IO.Directory]::CreateDirectory($assets) | Out-Null
-        $name = 'AstralPartyChatPlugin-v1.0.20.zip'
-        Copy-Item -LiteralPath (Join-Path $f.Assets $zipName) -Destination (Join-Path $assets $name)
-        $hash = (Get-FileHash -LiteralPath (Join-Path $assets $name) -Algorithm SHA256).Hash.ToLowerInvariant()
-        [IO.File]::WriteAllText((Join-Path $assets 'SHA256SUMS.txt'), "$hash  $name`n", $utf8)
+        Write-ReleaseAssets $f -ReleaseTag 'v1.0.20' -Root $assets
         # Same-second commit dates can change Git's traversal around a merge. Check
         # the intended set separately, then preserve Git's actual --reverse order.
         $history = (Invoke-TestGit $f.Root @('-c', 'i18n.logOutputEncoding=utf-8', 'log', '--no-merges', '--reverse', '--abbrev=7', '--format=- %s (%h)', 'v1.0.10..HEAD', '--')) -split "`n"
@@ -765,7 +783,7 @@ try {
         $state = Get-State $f
         Assert-True ($state.Releases.Count -eq 1 -and $state.Releases[0].draft -and $null -eq $state.Tag) 'Partial failure did not preserve an unpublished draft.'
         Assert-True ($state.Releases[0].target_commitish -ceq $f.Head) 'Draft lost its exact source target.'
-        Assert-Sequence @($state.Releases[0].assets | ForEach-Object { $_.name }) @($zipName) 'Partial failure did not persist exactly the first uploaded asset.'
+        Assert-Sequence @($state.Releases[0].assets | ForEach-Object { $_.name }) @($assetNames[0]) 'Partial failure did not persist exactly the first uploaded asset.'
         Assert-True (@(Get-ReleaseCalls $f 'edit').Count -eq 0) 'Failed upload published the draft.'
         Assert-True ((Get-AssetFingerprint $f) -ceq $before) 'Partial upload failure changed local assets.'
         Assert-SnapshotsCleaned $f
@@ -774,7 +792,7 @@ try {
         Invoke-FixtureUpload $f | Out-Null
         $uploads = @(Get-ReleaseCalls $f 'upload')
         Assert-True ($uploads.Count -eq 2 -and @(Get-ReleaseCalls $f 'create').Count -eq 1) 'Retry recreated the release or repeated the wrong uploads.'
-        Assert-UploadFiles $f $uploads[1] @('SHA256SUMS.txt')
+        Assert-UploadFiles $f $uploads[1] @($assetNames | Select-Object -Skip 1)
         Assert-True (@(Get-ReleaseCalls $f 'edit').Count -eq 1 -and -not (Get-State $f).Releases[0].draft) 'Retry did not publish the completed draft once.'
         Assert-True ((Get-AssetFingerprint $f) -ceq $before) 'Retry changed local assets.'
         Assert-SnapshotsCleaned $f
@@ -793,22 +811,62 @@ try {
         Test-Case "checksum-$kind-is-rejected-before-gh" {
             $f = New-Fixture
             $manifestPath = Join-Path $f.Assets 'SHA256SUMS.txt'
-            $manifest = [IO.File]::ReadAllText($manifestPath)
-            if ($kind -ceq 'wrong-hash') { $manifest = ('0' * 64) + "  $zipName`n" }
-            elseif ($kind -ceq 'extra-dll-line') { $manifest += ('0' * 64) + "  AstralPartyChatPlugin.dll`n" }
-            else { $manifest = $manifest.Replace($zipName, $zipName.ToLowerInvariant()) }
-            [IO.File]::WriteAllText($manifestPath, $manifest, $utf8)
-            Assert-Rejected $f 'Release checksum must match the ZIP and contain only that ZIP'
+            $lines = [IO.File]::ReadAllLines($manifestPath)
+            if ($kind -ceq 'wrong-hash') { $lines[1] = ('0' * 64) + $lines[1].Substring(64) }
+            elseif ($kind -ceq 'extra-dll-line') { $lines += ('0' * 64) + '  AstralPartyChatPlugin.dll' }
+            else { $lines[1] = $lines[1].Replace($zipName, $zipName.ToLowerInvariant()) }
+            [IO.File]::WriteAllText($manifestPath, ($lines -join "`n") + "`n", $utf8)
+            Assert-Rejected $f 'Release checksums must match both ZIPs and update.json'
             Assert-NoCalls $f
         }
     }
 
     foreach ($kind in @('extra-entry', 'wrong-installation-path')) {
-        Test-Case "zip-$kind-is-rejected-before-gh" {
+        Test-Case "update-zip-$kind-is-rejected-before-gh" {
             $f = New-Fixture
             $entries = if ($kind -ceq 'extra-entry') { @($dllEntry, 'README.txt') } else { @('AstralPartyChatPlugin.dll') }
-            Write-TestZip $f $entries
-            Assert-Rejected $f 'Release ZIP must contain only the plugin DLL at its installation path'
+            Write-ReleaseAssets $f -UpdateEntries $entries
+            Assert-Rejected $f 'Update ZIP must contain only the plugin DLL at its installation path'
+            Assert-NoCalls $f
+        }
+    }
+
+    # Each of these would publish a release that installed plugins refuse or that installs a different DLL.
+    foreach ($kind in @('altered-manifest', 'foreign-signature', 'other-repository', 'different-install-dll', 'install-zip-without-installer', 'install-zip-with-second-plugin-copy')) {
+        Test-Case "$kind-is-rejected-before-gh" {
+            $f = New-Fixture
+            $message = 'Update manifest signature does not match the trusted public key'
+            switch ($kind) {
+                'altered-manifest' {
+                    $path = Join-Path $f.Assets 'update.json'
+                    [IO.File]::WriteAllText($path, [IO.File]::ReadAllText($path).Replace('"6.0.0-be.788"', '"6.0.0-be.1"'), $utf8)
+                    Write-Checksums $f.Assets
+                }
+                'foreign-signature' {
+                    $key = [Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP256)
+                    try {
+                        $signature = $key.SignData([IO.File]::ReadAllBytes((Join-Path $f.Assets 'update.json')), [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.DSASignatureFormat]::IeeeP1363FixedFieldConcatenation)
+                    } finally { $key.Dispose() }
+                    [IO.File]::WriteAllText((Join-Path $f.Assets 'update.json.sig'), [Convert]::ToBase64String($signature), [Text.Encoding]::ASCII)
+                }
+                'other-repository' {
+                    Write-ReleaseAssets $f -Repository 'someone/else'
+                    $message = 'Update manifest does not describe this release package'
+                }
+                'different-install-dll' {
+                    Write-ReleaseAssets $f -DifferentInstallDll
+                    $message = 'Install ZIP and update ZIP contain different plugin DLLs'
+                }
+                'install-zip-without-installer' {
+                    Write-ReleaseAssets $f -OmitInstallEntries @('install.ps1')
+                    $message = 'Install ZIP is missing install.ps1'
+                }
+                'install-zip-with-second-plugin-copy' {
+                    Write-ReleaseAssets $f -ExtraInstallEntries @('BepInEx/plugins/AstralParty.Chat.dll')
+                    $message = 'Install ZIP must contain nothing but this plugin below BepInEx/plugins'
+                }
+            }
+            Assert-Rejected $f $message
             Assert-NoCalls $f
         }
     }

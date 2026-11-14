@@ -4,14 +4,14 @@
 
 ## 준비 사항
 
-- Windows x64, PowerShell 7, Git
+- Windows x64, PowerShell 7.2 이상, Git
 - Astral Party 글로벌 Steam판
 - [README의 설치 안내](../README.md#설치)에 따라 설정하고 한 번 실행한 BepInEx 6 Unity IL2CPP Windows x64
 - 게임 실행으로 생성된 `BepInEx/interop` 참조 DLL
 
 프로젝트는 `net6.0`을 대상으로 빌드합니다. SDK는 `global.json`의 `6.0.428`과 `latestPatch` 정책을 사용합니다. BepInEx 참조의 특정 버전은 고정하지 않고 설치된 게임의 `core`·`interop` DLL을 사용합니다.
 
-환경 준비·빌드·검사는 PowerShell 7에서 실행합니다. 릴리즈 준비·업로드와 공통 릴리즈 설명 helper는 Windows PowerShell 5.1 호환성을 유지합니다.
+환경 준비·빌드·검사·패키징·업로드는 PowerShell 7에서 실행합니다. 서명을 만들고 검증하는 패키징·업로드와 그 검사는 7.2 이상이 필요합니다. 릴리즈 준비(`prepare-release.ps1`)와 공통 릴리즈 설명 helper, 사용자에게 배포하는 `installer/install.ps1`은 Windows PowerShell 5.1에서 동작해야 합니다.
 
 ## 개발 환경 초기화
 
@@ -57,7 +57,7 @@ dist/
 └─ build-references.json
 ```
 
-게임에서 확인할 때는 [README의 설치 위치](../README.md#설치)에 DLL을 복사하세요.
+게임에서 확인할 때는 [README의 설치 위치](../README.md#수동-설치)에 DLL을 복사하세요.
 
 | 옵션 | 동작 |
 | --- | --- |
@@ -99,7 +99,7 @@ dist/
 
 기본 패키징은 최신 소스를 빌드하고 `dist/release/vX.Y.Z/`에 릴리즈 파일을 생성합니다. 선행 빌드는 필요 없으며 빌드가 실패하면 패키징도 중단합니다. `-GameRoot`·`-RefsRoot`·`-WorkRoot`·`-DotNetPath`를 내부 빌드에 전달합니다. 패키징의 `-OutputRoot`는 릴리즈 폴더이며 내부 빌드 결과는 기본 `dist/`에 보관합니다.
 
-채팅 플러그인은 `-DllPath`를 지정하면 기존 DLL을 빌드 없이 패키징할 수 있습니다. 파일 구성·버전 선택과 업로드는 [릴리즈 문서](releases.md#3-로컬-빌드와-패키징)에 정리되어 있습니다.
+패키징에는 업데이트 서명 키가 필요하고, 처음 실행할 때 고정한 BepInEx 배포물을 내려받습니다. `-DllPath`를 지정하면 기존 DLL을 빌드 없이 패키징할 수 있습니다. 파일 구성·서명 키·버전 선택과 업로드는 [릴리즈 문서](releases.md#3-로컬-빌드와-패키징)에 정리되어 있습니다.
 
 ## 검증
 
@@ -109,13 +109,15 @@ dist/
 .\scripts\check.ps1
 ```
 
-전체 실행기는 공개 파일, SDK·참조, 프로젝트 버전·MSBuild 버전, 패키징, 릴리즈 준비·업로드 검사와 `scripts/test.ps1`의 런타임 회귀 검사를 실행합니다. 런타임 검사만 필요하면 다음 명령을 사용합니다.
+전체 실행기는 공개 파일, SDK·참조, 프로젝트 버전·MSBuild 버전, 패키징, 설치 프로그램, 릴리즈 준비·업로드 검사와 `scripts/test.ps1`의 런타임 회귀 검사를 실행합니다. 런타임 검사만 필요하면 다음 명령을 사용합니다.
 
 ```powershell
 .\scripts\test.ps1
 ```
 
 채팅의 런타임 검사는 실제 클라이언트·상태·오버레이·외부 응답 처리 코드를 가짜 HTTP/WebSocket과 Unity 객체로 확인합니다.
+
+`tests/update/UpdateTests.csproj`는 실제 업데이트 코드(매니페스트 검증, ZIP 추출, DLL 교체, 재시작 명령 구성)를 일회용 서명 키와 임시 폴더로 실행합니다. 패키징 검사는 일회용 키로 만든 릴리즈를 이 프로젝트의 검증 경로에 넘겨, 릴리즈 스크립트의 산출물을 플러그인이 실제로 받아들이는지 확인합니다. 설치 프로그램 검사는 `install.ps1`을 Windows PowerShell 5.1로 실행하되 프로세스 조회·Steam 상태·실행만 대체합니다. 업데이트 안내 패널은 오버레이 검사에 포함됩니다. 어느 검사도 실제 서명 키, GitHub, 게임을 사용하지 않습니다.
 
 `tests/overlay/OverlayTests.csproj`와 같은 소스를 사용하는 헤드리스 스모크는 실제 오버레이·전송 상태 머신을 실행하지만, 글자 측정·IME·포커스·네이티브 객체 정리는 모의 객체로 재현합니다. 프로덕션 네이티브 브리지인 `FairyGui.cs`, `FguiNode.cs`, `GameChatRuntime.Screen.cs`는 이 검사에서 실행되지 않습니다. 실제 글꼴의 줄바꿈·레이블 축소, Windows IME 이벤트 순서와 네이티브 자원 수명은 아래 게임 검사로 확인해야 합니다.
 
@@ -136,6 +138,8 @@ dist/
 - 채팅창 위 클릭·휠이 게임 UI와 맵으로 전달되지 않는지
 - 채팅창을 열거나 닫은 상태에서 방·캐릭터 선택 → 플레이 전환 후 초상화 유지
 - 연결 실패 후 재연결과 종료 시 UI·패치 정리
+- 자동 업데이트: 공개된 최신 Release보다 낮은 `VERSION`으로 빌드한 DLL을 설치하고 게임을 시작해, 로그의 `Installed plugin update`, 왼쪽 위 안내 패널의 위치·글꼴·게임 UI와의 겹침, 로그인 화면에서 게임 시작으로 넘어간 뒤에도 안내 글자가 유지되는지, **지금 다시 시작**으로 새 버전이 로드되고 `.old`가 지워지는지 확인. `AutoUpdate = false`에서는 안내만 표시되는지 확인
+- 설치 ZIP의 `install.bat`: BepInEx가 없는 게임과 이미 있는 게임, 예전 DLL이 다른 위치에 남은 게임에서 실행한 뒤 플러그인이 한 번만 로드되는지
 
 미선택 플레이어도 픽순을 전달하도록 `unselected` 규약을 추가했습니다. 새 플러그인을 사용하기 전에 `astral-patch-site`의 대응 변경을 서버에 배포해야 합니다. 플러그인 빌드나 회귀 검사는 운영 서버를 자동으로 갱신하지 않습니다.
 
@@ -143,7 +147,7 @@ dist/
 
 소스·테스트·스크립트·문서는 공개 저장소에 포함합니다. 게임·Unity·IL2CPP·BepInEx 참조 DLL과 SDK, 로그·자격 증명·개인 개발 기록은 제외합니다. `.work`·`dist`·`bin`·`obj`는 로컬 산출물입니다. `check-public-files.ps1`은 Git의 추적 파일과 무시되지 않은 새 파일을 검사합니다.
 
-텍스트는 LF와 UTF-8을 사용합니다. C#·PowerShell·Python은 4칸, Markdown·YAML·XML·JSON은 2칸 들여씁니다. Windows PowerShell 5.1에서 한글 릴리즈 설명을 읽도록 `prepare-release.ps1`·`release-notes.ps1`만 UTF-8 BOM을 유지합니다.
+텍스트는 LF와 UTF-8을 사용합니다. C#·PowerShell·Python은 4칸, Markdown·YAML·XML·JSON은 2칸 들여씁니다. Windows PowerShell 5.1에서 한글을 읽도록 `prepare-release.ps1`·`release-notes.ps1`·`installer/install.ps1`만 UTF-8 BOM을 유지하고, 릴리즈 ZIP에 넣는 `install.bat`만 CRLF를 사용합니다.
 
 ## 커밋 메시지
 

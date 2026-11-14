@@ -9,6 +9,7 @@
     <Compile Remove="overlay/**/*.cs" />
     <Compile Remove="security/**/*.cs" />
     <Compile Remove="assets/**/*.cs" />
+    <Compile Remove="update/**/*.cs" />
     <Compile Include="../src/PartyChatClient*.cs" Link="%(Filename)%(Extension)" />
     <Compile Include="../src/PartyProtocol.cs" Link="PartyProtocol.cs" />
     <Compile Include="../src/RemotePayload.cs" Link="RemotePayload.cs" />

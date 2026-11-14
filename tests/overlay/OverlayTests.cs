@@ -59,6 +59,7 @@ internal static class OverlayTests
         KeyboardInputTests.Run();
         PortraitStateTests.Run();
         WindowSettingsTests.Run();
+        UpdateNoticeTests.Run();
         ChatOverlay.Shutdown();
         Check.Summary();
         return 0;

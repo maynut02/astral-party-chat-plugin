@@ -20,8 +20,8 @@ internal sealed class FguiNode
     private const string GObject = "FairyGUI.GObject";
     private const string Ns = "FairyGUI";
     private static readonly Dictionary<IntPtr, (IntPtr Pointer, nint Handle)> Textures = new();
-    private static IntPtr _registeredFont;
-    private static nint _registeredFontHandle;
+    private static readonly Dictionary<string, (IntPtr Pointer, nint Handle)> Fonts = new(StringComparer.Ordinal);
+    private static FguiNode? _root;
     private nint _handle;
     private float _x = float.NaN, _y = float.NaN, _width = float.NaN, _height = float.NaN;
     private float _scale = float.NaN, _alpha = float.NaN, _rotation = float.NaN;
@@ -75,7 +75,10 @@ internal sealed class FguiNode
         {
             if (!FairyGui.TryClass(Ns, "GRoot", out var klass)) return null;
             var root = FairyGui.CallStatic(klass, "get_inst");
-            return root == IntPtr.Zero ? null : Borrow(root);
+            if (root == IntPtr.Zero) return null;
+            // Read every frame: reuse the wrapper while the game keeps the same GRoot.
+            if (_root == null || _root.Pointer != root) _root = Borrow(root);
+            return _root;
         }
     }
 
@@ -106,14 +109,53 @@ internal sealed class FguiNode
             DisposeNative(dynamicFont, handle);
             throw;
         }
-        var previous = _registeredFont;
-        var previousHandle = _registeredFontHandle;
-        _registeredFont = dynamicFont;
-        _registeredFontHandle = handle;
+        Fonts.TryGetValue(alias, out var previous);
+        Fonts[alias] = (dynamicFont, handle);
         // Registering the replacement first preserves the alias. Unregistering
         // the old font here could remove the replacement's alias as well.
-        if (previous != IntPtr.Zero)
-            DisposeNative(previous, previousHandle);
+        if (previous.Pointer != IntPtr.Zero)
+            DisposeNative(previous.Pointer, previous.Handle);
+    }
+
+    /// <summary>Unregisters one alias registered by <see cref="RegisterFont"/>.</summary>
+    public static void ReleaseFont(string alias)
+    {
+        if (!Fonts.Remove(alias, out var font))
+            return;
+        try
+        {
+            FairyGui.CallStaticObject(FairyGui.Class(Ns, "FontManager"), "UnregisterFont", "FairyGUI.BaseFont", font.Pointer);
+        }
+        finally { DisposeNative(font.Pointer, font.Handle); }
+    }
+
+    /// <summary>
+    /// Changes whenever FairyGUI's font table is written, by the game or by any
+    /// plugin. Use it only to decide when <see cref="OwnsFont"/> must be asked.
+    /// </summary>
+    public static int FontRegistryVersion
+    {
+        get
+        {
+            var factory = FairyGui.ReadStaticObject(FairyGui.Class(Ns, "FontManager"), "sFontFactory");
+            return factory == IntPtr.Zero ? -1 : FairyGui.ReadField<int>(factory, "_version");
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="alias"/> still resolves to the font registered
+    /// here. The game's FontManager.Clear() (run when the game starts after the
+    /// login screen) disposes and drops every font, so UI created earlier must
+    /// register again; another plugin's registration leaves this one intact.
+    /// </summary>
+    public static bool OwnsFont(string alias)
+    {
+        if (!Fonts.TryGetValue(alias, out var own))
+            return false;
+        // Looking up a dropped alias makes FairyGUI register an OS fallback under
+        // that name. The caller registers again in that case, which replaces it.
+        return FairyGui.CallStaticObject(FairyGui.Class(Ns, "FontManager"), "GetFont", FairyGui.String,
+            FairyGui.InternString(alias)) == own.Pointer;
     }
 
     public bool IsDisposed => FairyGui.Get<bool>(Pointer, "get_isDisposed");
@@ -328,17 +370,12 @@ internal sealed class FguiNode
             catch { }
         }
         Textures.Clear();
-        var font = _registeredFont;
-        var handle = _registeredFontHandle;
-        _registeredFont = IntPtr.Zero;
-        _registeredFontHandle = 0;
-        if (font == IntPtr.Zero)
-            return;
-        try
+        foreach (var alias in new List<string>(Fonts.Keys))
         {
-            FairyGui.CallStaticObject(FairyGui.Class(Ns, "FontManager"), "UnregisterFont", "FairyGUI.BaseFont", font);
+            try { ReleaseFont(alias); }
+            catch { }
         }
-        finally { DisposeNative(font, handle); }
+        _root = null;
     }
 
     private static void DisposeNative(IntPtr pointer, nint handle)

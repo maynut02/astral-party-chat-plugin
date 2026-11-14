@@ -11,18 +11,31 @@
 
 ## 설치
 
-Windows x64의 글로벌 Steam판만 지원합니다. 게임에 **BepInEx 6 Unity IL2CPP Windows x64**가 먼저 설치되어 있어야 합니다. 플러그인 ZIP에는 DLL 한 개만 들어 있으며 BepInEx는 포함하지 않습니다.
+Windows x64의 글로벌 Steam판만 지원합니다. [Releases](https://github.com/maynut02/astral-party-chat-plugin/releases)의 `AstralPartyChatPlugin-v버전.zip`에는 플러그인, 설치 프로그램과 **BepInEx 6 Unity IL2CPP Windows x64**(`6.0.0-be.788`)가 함께 들어 있습니다.
 
 | Steam판 | 설치 폴더 | 실행 파일 |
 | --- | --- | --- |
 | 글로벌판 | `8vJXnINT` | `AstralParty_INT.exe` |
 
-### 1. BepInEx 설치와 게임용 설정
+### 간편 설치 (권장)
 
-1. 게임을 종료하고, Steam 라이브러리에서 아스트랄 파티를 우클릭해 **관리 → 로컬 파일 보기**를 선택합니다.
-2. 위 표의 `8vJXnINT` 폴더로 들어갑니다. 게임 실행 파일이 있는 위치에 BepInEx와 플러그인을 설치합니다.
-3. [BepInEx 다운로드](https://builds.bepinex.dev/projects/bepinex_be)에서 **Unity IL2CPP Windows x64** 배포물을 내려받아 압축 내용 전체를 이 위치에 복사합니다. 빌드 참조는 설치된 게임의 DLL을 사용하며 특정 BepInEx 빌드 번호를 고정하지 않습니다. 실제 게임에서 확인한 빌드는 `6.0.0-be.788`입니다.
-4. **게임을 처음 실행하기 전에** `BepInEx/config/BepInEx.cfg`를 열고 아래 설정을 적용합니다. 폴더나 파일이 없다면 직접 만드세요. 파일 이름이 `BepInEx.cfg.txt`로 저장되지 않도록 확인하세요.
+1. 게임을 종료합니다.
+2. [Releases](https://github.com/maynut02/astral-party-chat-plugin/releases)에서 `AstralPartyChatPlugin-v버전.zip`을 내려받아 **전체 압축을 풉니다**.
+3. 압축을 푼 폴더에서 `install.bat`을 실행합니다.
+
+설치 프로그램은 다음 순서로 동작합니다. 게임 파일은 바꾸지 않습니다.
+
+- Steam 라이브러리에서 게임을 찾습니다. 찾지 못하면 `AstralParty_INT.exe`가 있는 폴더를 입력하세요. 게임이 실행 중이면 종료할 때까지 기다립니다.
+- BepInEx가 없을 때만 ZIP에 포함된 BepInEx를 설치합니다. 이미 있으면 덮어쓰지 않습니다.
+- `BepInEx/config/BepInEx.cfg`의 `UnityLogListening`과 `[Logging.Console]`의 `Enabled`를 `false`로 맞춥니다. 다른 설정, 주석과 파일 인코딩은 유지합니다.
+- `BepInEx/plugins` 아래의 다른 폴더나 이전 이름(`AstralParty.Chat.dll`)으로 남아 있는 예전 플러그인 파일을 지우고, 새 DLL을 `BepInEx/plugins/AstralPartyChatPlugin/`에 설치합니다. 다른 플러그인은 건드리지 않습니다.
+- 원하면 Steam 로그인을 확인한 뒤 게임을 실행합니다. BepInEx를 처음 설치했다면 첫 실행은 1~2분 동안 화면이 뜨지 않습니다.
+
+### 수동 설치
+
+1. 게임을 종료하고, Steam 라이브러리에서 아스트랄 파티를 우클릭해 **관리 → 로컬 파일 보기**를 선택한 뒤 위 표의 `8vJXnINT` 폴더로 들어갑니다.
+2. BepInEx가 없다면 ZIP의 내용 전체(`install.bat`·`install.ps1` 제외)를 이 위치에 복사합니다. ZIP의 `BepInEx/config/BepInEx.cfg`에는 아래 설정이 들어 있습니다.
+3. BepInEx가 이미 있다면 ZIP의 `BepInEx/plugins/AstralPartyChatPlugin` 폴더만 복사하고, `BepInEx/config/BepInEx.cfg`에 아래 설정을 적용합니다. 같은 섹션과 항목을 중복으로 추가하지 않습니다.
 
 ```ini
 [Logging]
@@ -30,22 +43,9 @@ UnityLogListening = false
 
 [Logging.Console]
 Enabled = false
-
-[Logging.Disk]
-WriteUnityLog = false
 ```
 
-기존 설정 파일이 있다면 위 세 항목만 바꾸세요. 같은 섹션과 항목을 중복으로 추가하지 않습니다. 이 설정은 아스트랄 파티의 BepInEx 초기화 문제를 피하기 위한 것입니다.
-
-설정을 저장한 뒤 Steam에서 게임을 한 번 실행하고 종료합니다. 최초 실행은 BepInEx의 참조 파일 생성 때문에 시간이 걸릴 수 있습니다.
-
-### 2. 채팅 플러그인 설치
-
-1. 게임을 종료합니다.
-2. [Releases](https://github.com/maynut02/astral-party-chat-plugin/releases)에서 `AstralPartyChatPlugin-v버전.zip`을 내려받아 압축을 풉니다.
-3. 압축에서 꺼낸 `BepInEx` 폴더를 위의 `8vJXnINT` 위치에 복사하고, 기존 폴더와 합칩니다.
-
-설치 후 파일 위치가 다음과 같으면 됩니다.
+이 설정은 아스트랄 파티의 BepInEx 초기화 문제를 피하기 위한 것입니다. 설치 후 파일 위치가 다음과 같으면 됩니다.
 
 ```text
 Astral Party/
@@ -59,7 +59,7 @@ Astral Party/
             └─ AstralPartyChatPlugin.dll
 ```
 
-수동 설치할 때도 위 위치에 DLL 한 개를 넣으세요. Release에 함께 첨부된 `SHA256SUMS.txt`는 ZIP의 무결성 확인용이며 게임 폴더에 복사할 필요는 없습니다.
+`BepInEx/plugins`에는 이 플러그인의 DLL을 한 개만 두세요. 다른 폴더의 사본이나 이전 이름인 `AstralParty.Chat.dll`이 남아 있으면 예전 버전이 대신 로드될 수 있습니다. Release에 함께 첨부된 `update-v버전.zip`·`update.json`·`update.json.sig`는 자동 업데이트용, `SHA256SUMS.txt`는 무결성 확인용이며 직접 내려받을 필요는 없습니다.
 
 ## 사용 방법
 
@@ -93,22 +93,27 @@ Astral Party/
 
 ## 업데이트와 제거
 
-업데이트할 때는 게임을 종료한 뒤 새 버전의 ZIP을 내려받아 위의 설치 위치에 DLL을 교체하세요. 이전 이름인 `AstralParty.Chat.dll`을 사용하고 있었다면 해당 파일을 제거하세요. `BepInEx/plugins`에는 최신 `AstralPartyChatPlugin.dll`을 한 개만 유지하세요.
+플러그인은 게임을 시작할 때 GitHub의 최신 릴리즈를 확인합니다. 새 버전이 있으면 배포 서명을 검증한 뒤 플러그인 DLL만 교체하고, 화면 왼쪽 위에 안내를 표시합니다. **지금 다시 시작**을 누르면 게임이 새 버전으로 다시 실행되며, 안내를 닫으면 다음 게임 실행부터 적용됩니다. 최신 버전이거나 인터넷에 연결되지 않은 경우처럼 알릴 내용이 없으면 안내는 나타나지 않습니다.
 
-플러그인을 제거하려면 게임을 종료하고 `BepInEx/plugins/AstralPartyChatPlugin` 폴더를 삭제하세요. 다른 플러그인이 사용하는 BepInEx 폴더 전체를 삭제할 필요는 없습니다.
+자동 설치를 끄려면 `BepInEx/config/astral-party.chat.cfg`에서 `AutoUpdate = false`로 바꾸세요. 이때는 새 버전이 나왔다는 안내만 표시합니다. 이전 DLL은 다음 실행 때까지 `AstralPartyChatPlugin.dll.old`로 남았다가 지워집니다.
+
+0.2.1 이하 버전에는 자동 업데이트가 없습니다. [간편 설치](#간편-설치-권장)를 한 번 진행하면 이후 버전부터 자동으로 설치됩니다. 직접 업데이트할 때도 게임을 종료한 뒤 새 ZIP의 `install.bat`을 실행하면 됩니다.
+
+플러그인을 제거하려면 게임을 종료하고 `BepInEx/plugins/AstralPartyChatPlugin` 폴더를 삭제하세요. 다른 플러그인이 쓰지 않는 BepInEx까지 지우려면 게임 폴더의 `BepInEx`·`dotnet` 폴더와 `winhttp.dll`, `doorstop_config.ini`, `.doorstop_version`, `changelog.txt`, `LICENSE-BepInEx.txt`를 삭제합니다.
 
 ## 문제가 생겼을 때
 
 - **채팅 버튼이 보이지 않음:** 방에 들어갔는지, DLL이 위의 위치에 있는지, BepInEx가 설치되어 있는지 확인하세요.
 - **채팅 버튼이 게임 버튼 옆이 아닌 곳에 보임:** 게임 업데이트로 기준 버튼을 찾지 못한 경우입니다. `BepInEx/LogOutput.log`의 `Chat button anchor:` 줄이 `screen ratio`로 표시됩니다. 이 줄을 제보에 포함해 주세요.
 - **계속 연결 중으로 표시됨:** 인터넷 연결과 채팅 서버 상태를 확인하세요. 일시적인 연결 실패는 자동으로 재시도합니다.
-- **업데이트 후 동작하지 않음:** 중복 DLL을 확인하세요. 게임 업데이트로 호환성이 달라졌을 수도 있습니다.
+- **업데이트 실패 안내가 표시됨:** 게임을 종료한 뒤 새 ZIP의 `install.bat`을 실행하세요. 원인은 `BepInEx/LogOutput.log`의 `Plugin update` 줄에 남습니다.
+- **업데이트 후 동작하지 않음:** `install.bat`을 다시 실행해 중복 DLL을 정리하세요. 게임 업데이트로 호환성이 달라졌을 수도 있습니다.
 
 해결되지 않으면 [Issues](https://github.com/maynut02/astral-party-chat-plugin/issues)에 플러그인 버전, 문제가 발생한 화면, 재현 방법과 `BepInEx/LogOutput.log`의 관련 내용을 알려주세요. 로그를 공개하기 전에 닉네임·방 번호·개인 경로 등은 가려주세요.
 
 ## 빌드
 
-Windows x64에서 PowerShell 7, Git과 BepInEx가 초기화된 게임을 준비하고 저장소 루트에서 실행합니다.
+Windows x64에서 PowerShell 7.2 이상, Git과 BepInEx가 초기화된 게임을 준비하고 저장소 루트에서 실행합니다.
 
 ```powershell
 .\scripts\setup.ps1
@@ -120,7 +125,7 @@ DLL만 필요하면 빌드 명령을, 릴리즈 파일도 필요하면 패키징
 
 ```powershell
 .\scripts\build.ps1             # DLL 한 개와 빌드 참조 기록 생성
-.\scripts\package-release.ps1   # 소스 빌드 후 DLL·ZIP·체크섬 생성
+.\scripts\package-release.ps1   # 소스 빌드 후 설치 ZIP·업데이트 ZIP·서명·체크섬 생성 (서명 키 필요)
 ```
 
 빌드 결과는 `dist/AstralPartyChatPlugin.dll`, 릴리즈 파일은 `dist/release/vX.Y.Z/`에 생성됩니다. `VERSION`이 제품 버전의 유일한 기준이며 빌드와 패키징은 버전을 올리지 않습니다. 경로 옵션과 전체 검사 명령은 [개발 문서](docs/development.md), 기존 DLL을 사용하는 `-DllPath`와 버전 준비·GitHub Release 업로드는 [릴리즈 문서](docs/releases.md)에 있습니다.

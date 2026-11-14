@@ -1,4 +1,6 @@
 * text=auto eol=lf
+# cmd.exe scripts ship inside the release ZIP; keep their line endings identical on every checkout.
+*.bat text eol=crlf
 
 *.dll binary
 *.exe binary

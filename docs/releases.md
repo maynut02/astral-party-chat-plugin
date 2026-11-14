@@ -1,6 +1,6 @@
 # 로컬 빌드와 릴리즈
 
-커밋을 모아 버전을 한 번 준비하고, 같은 소스 커밋에서 만든 ZIP과 체크섬을 GitHub Release에 게시합니다. GitHub Actions는 `Checks`만 실행합니다. 환경 준비와 검사는 [개발 문서](development.md)에 있습니다.
+커밋을 모아 버전을 한 번 준비하고, 같은 소스 커밋에서 만든 설치 ZIP·업데이트 ZIP·서명된 업데이트 매니페스트·체크섬을 GitHub Release에 게시합니다. 공개한 Release는 설치된 플러그인이 다음 게임 시작 때 자동으로 설치하므로, 공개 전에 실제 게임에서 확인하세요. GitHub Actions는 `Checks`만 실행합니다. 환경 준비와 검사는 [개발 문서](development.md)에 있습니다.
 
 ## 버전의 기준
 
@@ -76,26 +76,40 @@ git rev-parse HEAD
 
 기본 패키징은 기존 DLL이 있어도 최신 소스를 빌드한 뒤 릴리즈 파일을 생성합니다. 선행 빌드는 필요 없으며 빌드 실패 시 예전 DLL로 패키징하지 않고 중단합니다. 기본 태그는 `VERSION`의 `vX.Y.Z`이고 기본 릴리즈 폴더는 `dist/release/<태그>/`입니다.
 
-패키징은 DLL의 어셈블리 이름과 제품 버전을 확인하고, 예상한 산출물 이외의 파일이 있는 출력 폴더를 거부합니다. ZIP은 생성에 성공한 뒤 교체하므로 생성 실패 시 이전 ZIP을 유지합니다.
+패키징은 서명 키와 설치 프로그램 소스를 먼저 확인하고, DLL의 어셈블리 이름과 제품 버전을 검사하며, 예상한 산출물 이외의 파일이 있는 출력 폴더를 거부합니다. 릴리즈 파일 전체를 작업 폴더에서 만들어 검증한 뒤 출력 폴더에 복사하므로, 빌드·서명·검증이 실패하면 이전 릴리즈 파일을 건드리지 않습니다. 출력 폴더의 파일이 다른 프로그램에 열려 있어 복사가 중간에 실패하면 파일이 서로 맞지 않을 수 있으니 닫고 다시 패키징하세요. 업로더는 맞지 않는 파일을 거부합니다.
 
-`VERSION`이 `0.0.1`인 예시는 다음과 같습니다. 내부 빌드는 `dist/`의 DLL 한 개와 `build-references.json`을 갱신하고, DLL을 릴리즈 폴더에 복사합니다.
+`VERSION`이 `0.0.1`인 예시는 다음과 같습니다. 내부 빌드는 `dist/`의 DLL 한 개와 `build-references.json`을 갱신합니다.
 
 ```text
 dist/release/v0.0.1/
 ├─ AstralPartyChatPlugin.dll
 ├─ AstralPartyChatPlugin-v0.0.1.zip
+├─ update-v0.0.1.zip
+├─ update.json
+├─ update.json.sig
 └─ SHA256SUMS.txt
 ```
 
-ZIP에는 아래 DLL만 들어갑니다. 게임 참조 DLL, BepInEx 본체, SDK, PDB, 문서는 포함하지 않습니다.
+| 파일 | 내용 |
+| --- | --- |
+| `AstralPartyChatPlugin-vX.Y.Z.zip` | 사용자가 내려받는 설치 ZIP. 고정한 BepInEx `6.0.0-be.788` 배포물, `BepInEx/config/BepInEx.cfg`, 플러그인 DLL, `install.bat`·`install.ps1`, `LICENSE-BepInEx.txt` |
+| `update-vX.Y.Z.zip` | 설치된 플러그인이 내려받는 업데이트 ZIP. `BepInEx/plugins/AstralPartyChatPlugin/AstralPartyChatPlugin.dll` 한 개 |
+| `update.json` | 버전, 업데이트 ZIP의 주소·크기·SHA-256, DLL의 크기·SHA-256, 최소 BepInEx 버전 |
+| `update.json.sig` | `update.json` 바이트의 ECDSA P-256/SHA-256 서명(IEEE P1363, base64) |
+| `SHA256SUMS.txt` | 두 ZIP과 `update.json`의 SHA-256 |
+| `AstralPartyChatPlugin.dll` | 로컬 교체용. Release에는 첨부하지 않음 |
 
-```text
-BepInEx/plugins/AstralPartyChatPlugin/AstralPartyChatPlugin.dll
-```
+BepInEx 배포물은 처음 패키징할 때 `builds.bepinex.dev`에서 내려받아 크기와 SHA-256을 확인한 뒤 `.work/bepinex/`에 보관합니다. 게임 참조 DLL, SDK, PDB는 어느 ZIP에도 넣지 않습니다. 다른 버전을 패키징해도 이전 버전 폴더는 유지됩니다.
 
-별도 DLL은 로컬 교체용입니다. `SHA256SUMS.txt`에는 ZIP 한 개의 SHA-256만 기록합니다. GitHub Release에는 ZIP과 `SHA256SUMS.txt`만 첨부합니다. 다른 버전을 패키징해도 이전 버전 폴더는 유지됩니다.
+### 업데이트 서명 키
 
-DLL만 필요하면 `build.ps1`을 실행합니다. 패키징의 `-GameRoot`·`-RefsRoot`·`-WorkRoot`·`-DotNetPath`는 내부 빌드에 전달하며, `-OutputRoot`는 릴리즈 폴더를 지정합니다. 내부 빌드 결과는 기본 `dist/`에 보관합니다. 경로 옵션은 [개발 문서](development.md#dll-빌드)에 있습니다.
+설치된 플러그인은 `src/UpdateManifest.cs`의 `PublicKey`로 `update.json`의 서명을 검증하고, 이 저장소의 해당 버전 Release 주소와 플러그인 DLL 한 개만 가리키는 매니페스트만 받아들입니다. 릴리즈 스크립트는 같은 상수를 읽어, 그 공개 키와 짝이 맞는 개인 키가 없으면 패키징을 시작하지 않습니다. 공개 키는 `astral-party-korean-plugin`과 같은 키입니다.
+
+개인 키(암호화하지 않은 PKCS#8 PEM)는 `-SigningKeyPath`, 환경 변수 `ASTRAL_UPDATE_SIGNING_KEY`, `%USERPROFILE%\.astral-party\plugin-update-signing.pem` 순으로 찾습니다. 키는 저장소·릴리즈·로그에 넣지 않습니다. 키를 잃거나 교체하면 기존 설치본은 새 릴리즈를 검증하지 못하므로, 사용자가 설치 ZIP으로 한 번 직접 업데이트해야 합니다.
+
+업데이트 ZIP의 이름(`update-vX.Y.Z.zip`), 매니페스트 형식과 Release 첨부 파일 이름은 설치된 플러그인이 그대로 확인합니다. 바꾸면 이전 버전의 자동 업데이트가 끊깁니다.
+
+DLL만 필요하면 `build.ps1`을 실행합니다. 패키징의 `-GameRoot`·`-RefsRoot`·`-DotNetPath`는 내부 빌드에 전달하고, `-WorkRoot`는 내부 빌드와 BepInEx 보관·임시 작업 폴더에 함께 사용합니다. `-OutputRoot`는 릴리즈 폴더, `-Repository`는 매니페스트에 기록할 `owner/name`(기본 `maynut02/astral-party-chat-plugin`)을 지정합니다. 내부 빌드 결과는 기본 `dist/`에 보관합니다. 경로 옵션은 [개발 문서](development.md#dll-빌드)에 있습니다.
 
 `-Tag v0.0.1`로 태그를 선택할 수 있으며 자동 빌드에서는 `VERSION`과 같아야 합니다. 이미 만든 DLL을 빌드 없이 패키징하려면 `-DllPath`를 지정합니다.
 
@@ -103,7 +117,7 @@ DLL만 필요하면 `build.ps1`을 실행합니다. 패키징의 `-GameRoot`·`-
 .\scripts\package-release.ps1 -DllPath '.\dist\AstralPartyChatPlugin.dll'
 ```
 
-기존 DLL 모드에서는 DLL의 제품 버전과 태그가 같아야 하며 `-GameRoot`·`-RefsRoot`·`-WorkRoot`·`-DotNetPath`를 함께 사용할 수 없습니다. 태그를 생략하면 `VERSION`을 사용합니다. 이 옵션은 Git 태그를 만들지 않습니다. 사용자 지정 릴리즈 폴더에서 업로드할 때는 업로더의 `-AssetRoot`에 같은 경로를 지정하세요.
+기존 DLL 모드에서는 DLL의 제품 버전과 태그가 같아야 하며 `-GameRoot`·`-RefsRoot`·`-DotNetPath`를 함께 사용할 수 없습니다. 태그를 생략하면 `VERSION`을 사용합니다. 이 옵션은 Git 태그를 만들지 않습니다. 사용자 지정 릴리즈 폴더에서 업로드할 때는 업로더의 `-AssetRoot`에 같은 경로를 지정하세요.
 
 ## 4. GitHub Release에 업로드
 
@@ -116,7 +130,7 @@ DLL만 필요하면 `build.ps1`을 실행합니다. 패키징의 `-GameRoot`·`-
 .\scripts\upload-release.ps1
 ```
 
-업로더는 기존 ZIP과 체크섬을 사용합니다. `-Preview`는 GitHub 호출과 파일 변경 없이 로컬 계획을 출력하므로 원격 Release 상태는 실제 업로드에서 확인합니다. `Notes`는 본문의 출처, `NotesContent`는 전체 본문입니다.
+업로더는 PowerShell 7.2 이상에서 실행하며 이미 만든 릴리즈 파일을 사용합니다. 시작할 때 설치된 플러그인과 같은 기준으로 서명, 매니페스트의 버전·주소·크기·SHA-256, 업데이트 ZIP의 내용, 체크섬 파일을 검증하고, 설치 ZIP에 설치 프로그램과 같은 DLL이 들어 있고 `BepInEx/plugins` 아래에 다른 파일이 없는지 확인합니다. 하나라도 맞지 않으면 GitHub를 호출하기 전에 중단합니다. `-Preview`는 GitHub 호출과 파일 변경 없이 로컬 계획을 출력하므로 원격 Release 상태는 실제 업로드에서 확인합니다. `Notes`는 본문의 출처, `NotesContent`는 전체 본문입니다.
 
 ```powershell
 .\scripts\upload-release.ps1 -Preview | Select-Object -ExpandProperty NotesContent
@@ -125,7 +139,7 @@ DLL만 필요하면 `build.ps1`을 실행합니다. 패키징의 `-GameRoot`·`-
 | 옵션 | 동작 |
 | --- | --- |
 | `-Tag` | 기본 `VERSION`의 `vX.Y.Z`; 지정할 때도 같은 버전이어야 함 |
-| `-AssetRoot` | ZIP과 체크섬이 있는 폴더; 기본 `dist/release/<태그>` |
+| `-AssetRoot` | 릴리즈 파일이 있는 폴더; 기본 `dist/release/<태그>` |
 | `-NotesFile` | 지정한 설명 파일; 없으면 중단 |
 | `-Draft` | 새 Release와 기존 draft를 공개하지 않음 |
 | `-Preview` | 로컬 계획과 전체 본문 출력 |
@@ -136,7 +150,7 @@ DLL만 필요하면 `build.ps1`을 실행합니다. 패키징의 `-GameRoot`·`-
 
 ### 게시와 재시도
 
-새 Release는 draft로 만들고 두 첨부 파일이 모두 준비되면 공개합니다. draft로 유지하려면 `-Draft`를 지정하세요. 이미 공개된 Release의 공개 상태는 유지합니다.
+새 Release는 draft로 만들고 다섯 첨부 파일이 모두 준비되면 공개합니다. 설치된 플러그인은 공개된 최신 Release의 `update.json`만 읽으므로 draft는 자동 업데이트에 영향을 주지 않습니다. draft로 유지하려면 `-Draft`를 지정하세요. 이미 공개된 Release의 공개 상태는 유지합니다. GitHub에서 prerelease로 표시한 Release도 최신 Release가 아니므로 자동 업데이트 대상이 아닙니다.
 
 기존 Release에는 누락된 파일만 추가하며 설명은 덮어쓰지 않습니다. 같은 이름의 원격·로컬 파일은 SHA-256이 같으면 건너뛰고 다르면 중단합니다. 기존 태그가 다른 소스 커밋을 가리켜도 중단합니다.
 
@@ -144,6 +158,6 @@ DLL만 필요하면 `build.ps1`을 실행합니다. 패키징의 `-GameRoot`·`-
 
 ### 수동 업로드
 
-[새 Release 작성 화면](https://github.com/maynut02/astral-party-chat-plugin/releases/new)에서도 게시할 수 있습니다. 태그와 제목은 `vX.Y.Z`, 태그 대상은 먼저 push한 빌드 소스 커밋으로 지정합니다. 준비한 설명이나 Preview의 `NotesContent`를 붙여넣고 ZIP·`SHA256SUMS.txt`를 첨부한 뒤 공개하세요. 이미 만든 태그의 대상은 바꾸지 않습니다.
+[새 Release 작성 화면](https://github.com/maynut02/astral-party-chat-plugin/releases/new)에서도 게시할 수 있습니다. 태그와 제목은 `vX.Y.Z`, 태그 대상은 먼저 push한 빌드 소스 커밋으로 지정합니다. 준비한 설명이나 Preview의 `NotesContent`를 붙여넣고 두 ZIP·`update.json`·`update.json.sig`·`SHA256SUMS.txt`를 이름을 바꾸지 않고 첨부한 뒤 공개하세요. 이미 만든 태그의 대상은 바꾸지 않습니다.
 
 버전 준비·빌드·패키징은 커밋·Git 태그 생성·push·GitHub 게시를 수행하지 않습니다. GitHub Release의 생성·업로드·공개는 `upload-release.ps1`이 담당합니다. 다음 릴리즈 전에는 `git fetch origin --tags`로 태그를 갱신하세요.

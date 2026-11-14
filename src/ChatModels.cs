@@ -23,3 +23,8 @@ public sealed class ChatUiMessage
     public string Text { get; init; } = string.Empty;
     public bool IsSystem { get; init; }
 }
+
+internal enum UpdateSeverity { Success, Warning }
+
+/// <summary>What the update notice shows; a null message means there is nothing to tell the player.</summary>
+internal sealed record PluginUpdateState(string? Message, UpdateSeverity Severity, bool RestartRequired);
