@@ -193,6 +193,9 @@ internal static class GameStateReaderTests
         }
         game.SetSelectionHero(9001, 105);
         Ready(reader.Read(), "123456", "in-game nickname", "105", "P1");
+        // Newest playable hero (Souri); the allow-list must follow the game's roster.
+        game.SetSelectionHero(9001, 130);
+        Ready(reader.Read(), "123456", "in-game nickname", "130", "P1");
     }
 
     private static void Watcher()

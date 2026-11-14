@@ -13,7 +13,7 @@ internal static class PartyProtocol
     public const int HistoryLimit = 300;
     public const int MaxTextLength = 1000;
     private static readonly HashSet<string> CharacterIds = new(
-        Enumerable.Range(101, 29).Concat(Enumerable.Range(301, 6)).Select(id => id.ToString()),
+        Enumerable.Range(101, 30).Concat(Enumerable.Range(301, 6)).Select(id => id.ToString()),
         StringComparer.Ordinal);
 
     public static bool IsRoomId(string value) => value.Length == 6
